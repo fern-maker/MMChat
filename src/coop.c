@@ -60,6 +60,10 @@ CoopState coop_get_state(void) {
     return state;
 }
 
+const char* coop_get_save_name(void) {
+    return state == COOP_ACTIVE ? active_name : "";
+}
+
 void coop_describe(char* out, u32 out_len) {
     switch (state) {
         case COOP_ACTIVE:

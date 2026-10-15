@@ -9,7 +9,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define MMCHAT_PROTOCOL_VERSION "2"
+#define MMCHAT_PROTOCOL_VERSION "3"
 #define MMCHAT_MAX_LINE 512
 #define MMCHAT_MAX_PLAYERS 16
 #define MMCHAT_SCENE_NONE (-1) // Title screen, file select, credits.
@@ -47,5 +47,29 @@ int mmchat_roster_count(void);
 // Copies roster entry `index` as a display line, e.g. "Alice - South Clock Town (Day 2)".
 // Returns its length, or -1 if `index` is out of range.
 int mmchat_roster_get(int index, char* out, size_t out_len);
+
+// ---- Co-op sync ----
+//
+// Shared progression is a set of 32-bit values identified by keys. The merge rule is part of the key
+// (bits 12-15), so the server and this library can merge without knowing what a key means.
+
+#define MMCHAT_SYNC_OP(key) (((key) >> 12) & 0xF)
+#define MMCHAT_SYNC_OR 1  // Bit sets: a bit set by anyone is set for everyone.
+#define MMCHAT_SYNC_MAX 2 // Levels: everyone gets the highest value.
+#define MMCHAT_SYNC_SLOTS 256
+
+// Joins a co-op group (the co-op save name), or leaves with "". Changing groups clears the cached state.
+// Cheap to call every frame.
+void mmchat_coop_set_group(const char* group);
+
+// Increments whenever any merged value changes.
+uint32_t mmchat_sync_version(void);
+// The group's merged value for `key` (0 if nothing is known yet).
+uint32_t mmchat_sync_get(uint32_t key);
+// Name of the player whose update last changed `key`. Returns its length.
+size_t mmchat_sync_get_who(uint32_t key, char* out, size_t out_len);
+// Merges a local value into the cache and sends it if that changed anything.
+// Works offline too: unsent changes go out after (re)connecting. Returns 1 if the cache changed.
+int mmchat_sync_report(uint32_t key, uint32_t value);
 
 #endif

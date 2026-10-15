@@ -35,4 +35,19 @@ RECOMP_IMPORT(".", s32 chat_roster_count(void));
 // Writes entry `index` as e.g. "Alice - South Clock Town, Day 2". Returns -1 if out of range.
 RECOMP_IMPORT(".", s32 chat_roster_get(s32 index, char* out, u32 out_len));
 
+// Co-op sync. Keys carry their merge rule in bits 12-15; see coop_sync.c for the key list.
+#define SYNC_OP_OR 1
+#define SYNC_OP_MAX 2
+#define SYNC_KEY(op, id) (((u32)(op) << 12) | (u32)(id))
+
+// Joins the co-op group named after the co-op save, or leaves with "". Cheap to call every frame.
+RECOMP_IMPORT(".", void chat_coop_set_group(const char* group));
+RECOMP_IMPORT(".", u32 chat_sync_version(void));
+// The group's merged value for `key`, 0 if unknown.
+RECOMP_IMPORT(".", u32 chat_sync_get(u32 key));
+// Name of whoever last changed `key`.
+RECOMP_IMPORT(".", s32 chat_sync_get_who(u32 key, char* out, u32 out_len));
+// Merges our local value into the group state; sent now or after reconnecting. Returns 1 if it added anything.
+RECOMP_IMPORT(".", s32 chat_sync_report(u32 key, u32 value));
+
 #endif

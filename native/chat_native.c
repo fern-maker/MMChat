@@ -178,6 +178,38 @@ EXPORT void chat_roster_get(uint8_t* rdram, recomp_context* ctx) {
     return_s32(ctx, (int32_t)write_game_string(rdram, ctx->r5, (uint32_t)ctx->r6, line));
 }
 
+// void chat_coop_set_group(const char* group)
+EXPORT void chat_coop_set_group(uint8_t* rdram, recomp_context* ctx) {
+    char group[64];
+    read_game_string(rdram, ctx->r4, group, sizeof(group));
+    mmchat_coop_set_group(group);
+}
+
+// u32 chat_sync_version(void)
+EXPORT void chat_sync_version(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram;
+    return_s32(ctx, (int32_t)mmchat_sync_version());
+}
+
+// u32 chat_sync_get(u32 key)
+EXPORT void chat_sync_get(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram;
+    return_s32(ctx, (int32_t)mmchat_sync_get((uint32_t)ctx->r4));
+}
+
+// s32 chat_sync_get_who(u32 key, char* out, u32 out_len)
+EXPORT void chat_sync_get_who(uint8_t* rdram, recomp_context* ctx) {
+    char who[64];
+    mmchat_sync_get_who((uint32_t)ctx->r4, who, sizeof(who));
+    return_s32(ctx, (int32_t)write_game_string(rdram, ctx->r5, (uint32_t)ctx->r6, who));
+}
+
+// s32 chat_sync_report(u32 key, u32 value): 1 if it added anything to the group's state
+EXPORT void chat_sync_report(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram;
+    return_s32(ctx, mmchat_sync_report((uint32_t)ctx->r4, (uint32_t)ctx->r5));
+}
+
 // s32 chat_poll(char* out, u32 out_len): line length, or -1 if no new lines
 EXPORT void chat_poll(uint8_t* rdram, recomp_context* ctx) {
     char line[MMCHAT_MAX_LINE];

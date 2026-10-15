@@ -26,6 +26,15 @@ CHAT
   corner while the window is closed. The right side of the window lists
   who's online and which area and day they're in.
 
+CO-OP (shared progression)
+  In the Mods menu, turn on "Co-op Save" and everyone uses the same
+  "Co-op Save Name". File select then shows a separate co-op save (your
+  normal saves are untouched); start a new file there. Masks one player
+  gets are given to everyone in the group. Shared progress starts arriving
+  once you've learned the Song of Time, so the opening plays normally.
+  Not compatible with the "Ultimate 6 Save Slots" mod (disable it for co-op).
+  The host's server keeps the group's progress in server/coop_state/.
+
   Everyone (and the server) needs the same MMChat release; mismatched
   versions get a "version mismatch" error when connecting.
 

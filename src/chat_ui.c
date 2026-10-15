@@ -4,6 +4,7 @@
 #include "recompconfig.h"
 #include "recompui.h"
 #include "chat_native.h"
+#include "chat_ui.h"
 #include "coop.h"
 
 #define DEFAULT_PORT 47474
@@ -93,6 +94,7 @@ static RecompuiResource overlay_labels[OVERLAY_LABELS];
 
 static bool panel_shown;
 static bool overlay_shown;
+static bool notice_pending; // A local notice (e.g. co-op) should pop up the overlay like a message.
 static int overlay_frames_left;
 static s32 shown_status = -1;
 static u32 shown_roster_version;
@@ -195,6 +197,11 @@ static bool poll_messages(void) {
         any = true;
     }
     return any;
+}
+
+void chat_ui_notify(const char* line) {
+    history_push(line);
+    notice_pending = true;
 }
 
 // ---- Actions ----
@@ -496,7 +503,10 @@ RECOMP_HOOK("Play_UpdateMain") void on_play_update(PlayState* play) {
         set_panel_shown(true);
     }
 
-    bool new_messages = poll_messages();
+    coop_sync_update(play);
+
+    bool new_messages = poll_messages() || notice_pending;
+    notice_pending = false;
 
     if (panel_shown) {
         refresh_panel();

@@ -3,7 +3,7 @@
 [manifest]
 
 id = "mm_chat"
-version = "0.3.0"
+version = "0.4.0"
 display_name = "MMChat"
 description = """
 Text chat with friends while you play. One player runs the MMChat server; everyone connects to it.
@@ -40,7 +40,12 @@ native_libraries = [
         "chat_set_location",
         "chat_roster_version",
         "chat_roster_count",
-        "chat_roster_get"
+        "chat_roster_get",
+        "chat_coop_set_group",
+        "chat_sync_version",
+        "chat_sync_get",
+        "chat_sync_get_who",
+        "chat_sync_report"
     ] }
 ]
 
@@ -77,7 +82,8 @@ id = "coop_mode"
 name = "Co-op Save"
 description = """
 On: file select shows a separate co-op save file instead of your normal saves. Start a new file there; \
-progression will be shared with your group (coming in a later version).
+masks are shared with everyone in your group who uses the same co-op save name (more progression \
+coming in later versions). Shared progress arrives once you've learned the Song of Time.
 
 Changes apply the next time you reach file select. Your normal saves are never modified."""
 type = "Enum"

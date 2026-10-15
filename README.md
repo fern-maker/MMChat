@@ -27,7 +27,11 @@ Requires Homebrew `llvm` and `lld` (Apple Clang can't target MIPS), `zip`, and `
 
 Each export has the signature `void f(uint8_t* rdram, recomp_context* ctx)`: arguments in `r4`-`r7`, return value in `r2`, game bytes at `(vaddr ^ 3) - 0xFFFFFFFF80000000`. The library must export `recomp_api_version = 1`, and every function must be listed under `native_libraries` in `mod.toml`.
 
-## Protocol (v2)
+## Co-op sync
+
+Spec: `docs/coop-sync-spec.md`. `src/coop.c` switches to the co-op save file; `src/coop_sync.c` compares each shared value with the group's merged value (cached by the native client) every frame, reports local gains and applies missing ones. Keys carry their merge rule in bits 12-15 (1 = OR, 2 = MAX) so the server stays game-agnostic; never renumber keys, since they're stored in the server's `coop_state/<group>.json`. Incoming progression is applied only after the player has learned the Song of Time.
+
+## Protocol (v3)
 
 UTF-8 lines ending in `\n`, tab-separated fields, max 512 bytes from clients. See the docstring in `server/mmchat_server.py`. Bump `PROTOCOL_VERSION` in the server and `MMCHAT_PROTOCOL_VERSION` in `native/chat_client.h` together on incompatible changes.
 

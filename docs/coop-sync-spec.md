@@ -11,6 +11,12 @@ determined by `Sram_SaveEndOfCycle` in `mm-decomp/src/code/z_sram_NES.c`.
 - Co-op play uses a **separate save file** (`recomp_change_save_file`), so normal saves are never touched.
 - The server keeps the merged shared state; a joining player receives it immediately.
 
+## Receiving starts after the opening
+
+Incoming progression is applied only once the player has learned the Song of Time. Before that, a new
+player could receive e.g. the Deku Mask ahead of the Skull Kid's curse and break the intro. Their own
+progress is still reported from the start.
+
 ## How syncing works
 
 Each frame the mod compares the shared fields against the last snapshot. Local gains are sent to the
@@ -31,7 +37,7 @@ Merge rules used below:
 
 | Category | Field(s) | Rule | Notes |
 |---|---|---|---|
-| Masks | `inventory.items[24..47]` (mask slots) | OR (present / not present) | Fierce Deity is deleted on reset if `WEEKEVENTREG_84_20`; apply the same rule locally |
+| Masks | `inventory.items[24..46]` (mask slots) | OR (present / not present) | **Implemented** (key `0x1001`). Fierce Deity (slot 47) is excluded: the game can delete it on reset, and sharing would hand it straight back |
 | Permanent items | `inventory.items[0..17]` except trade slots `SLOT_TRADE_DEED`, `SLOT_TRADE_KEY_MAMA`, `SLOT_TRADE_COUPLE` | OR (present / not present) | Bow, bombs, hookshot, lens, powder keg, pictograph box, Great Fairy sword… Ammo counts stay local |
 | Bottles | number of slots in `SLOT_BOTTLE_1..6` that hold anything | MAX (count) | A gained bottle is given to others **empty**. Contents are local |
 | Songs, remains, notebook, quest bits | `inventory.questItems` bits 0x00–0x18 except `QUEST_PICTOGRAPH` (0x19) | OR | Pictograph is cleared on reset; the heart-piece counter (0x1C+) has its own rule below |
