@@ -22,6 +22,8 @@ Other keys: 0x1002 quest bits (bit 6 Sonata, 7 Lullaby, 8 Bossa Nova, 9 Elegy, 1
   7 Bombchus, 8 Deku Sticks, 9 Deku Nuts, 12 Powder Keg, 13 Pictograph Box, 14 Lens of Truth, 15 Hookshot,
   16 Great Fairy's Sword; e.g. the Hookshot is /sync 0x1008 0x8000), 0x1009 equipment (1 Gilded Sword,
   2 Mirror Shield)
+  0x1100 + w: reward/notebook flags weekEventReg[4w..4w+3] (bit 8k+j = byte 4w+k, bit j)
+  0x1200 + scene*4 + field: persistent scene flags (field 0 switch0, 1 switch1, 2 chest, 3 collectible)
 """
 
 import argparse
@@ -48,6 +50,7 @@ ITEM_NAMES = {1: "Bow", 2: "Fire Arrow", 3: "Ice Arrow", 4: "Light Arrow", 6: "B
               8: "Deku Sticks", 9: "Deku Nuts", 12: "Powder Keg", 13: "Pictograph Box", 14: "Lens of Truth",
               15: "Hookshot", 16: "Great Fairy's Sword"}
 EQUIPMENT_NAMES = {0: "Gilded Sword", 1: "Mirror Shield"}
+SCENE_FIELDS = ["switch0", "switch1", "chest", "collectible"]
 # Keys from src/coop_sync.c. Bits 12-15 are the merge rule (1 = OR, 2 = MAX).
 KEY_LABELS = {0x1001: "masks", 0x1002: "quest", 0x1003: "owl statues (bits)", 0x1004: "dungeon maps/compasses (bits)",
               0x1005: "regions visited (bits)", 0x1006: "map clouds (bits)", 0x1007: "abilities",
@@ -69,6 +72,12 @@ def describe(key, value):
         return f"items: {', '.join(n for b, n in ITEM_NAMES.items() if value & (1 << b)) or 'none'}"
     if key == 0x1009:
         return f"equipment: {', '.join(n for b, n in EQUIPMENT_NAMES.items() if value & (1 << b)) or 'none'}"
+    if 0x1100 <= key <= 0x1118:
+        w = key - 0x1100
+        return f"reward/notebook flags weekEventReg[{4 * w}..{4 * w + 3}] = {value:#010x}"
+    if 0x1200 <= key <= 0x13C3:
+        scene, field = divmod(key - 0x1200, 4)
+        return f"scene {scene:#04x} {SCENE_FIELDS[field]} flags = {value:#010x}"
     if key in KEY_LABELS:
         return f"{KEY_LABELS[key]} = {value:#x}"
     return f"key {key:#06x} = {value:#010x}"

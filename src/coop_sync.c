@@ -28,6 +28,8 @@
 #define KEY_ABILITIES SYNC_KEY(SYNC_OP_OR, 0x007)
 #define KEY_ITEMS SYNC_KEY(SYNC_OP_OR, 0x008)
 #define KEY_EQUIPMENT SYNC_KEY(SYNC_OP_OR, 0x009)
+#define KEY_WEEK_EVENT_WORD(w) SYNC_KEY(SYNC_OP_OR, 0x100 + (w))                    // 0x100-0x118
+#define KEY_SCENE_FLAGS(scene, field) SYNC_KEY(SYNC_OP_OR, 0x200 + (scene) * 4 + (field)) // 0x200-0x3C3
 #define KEY_SCENES_VISIBLE(i) SYNC_KEY(SYNC_OP_OR, 0x010 + (i)) // 0x010-0x016
 #define KEY_QUIVER SYNC_KEY(SYNC_OP_MAX, 0x101)
 #define KEY_BOMB_BAG SYNC_KEY(SYNC_OP_MAX, 0x102)
@@ -57,7 +59,7 @@ static const char* const mask_names[32] = {
     "Garo's Mask", "the Captain's Hat", "the Giant's Mask",
 };
 
-static u32 read_masks(u32 param) {
+static u32 read_masks(PlayState* play, u32 param) {
     u32 bits = 0;
     for (int i = 0; i < SHARED_MASK_COUNT; i++) {
         if (SAVE_INFO.inventory.items[FIRST_MASK_SLOT + i] != ITEM_NONE) {
@@ -109,7 +111,7 @@ static const char* const quest_names[32] = {
     [QUEST_SONG_LULLABY_INTRO] = "the Lullaby Intro",
 };
 
-static u32 read_quest(u32 param) {
+static u32 read_quest(PlayState* play, u32 param) {
     return SAVE_INFO.inventory.questItems;
 }
 
@@ -119,7 +121,7 @@ static void apply_quest(PlayState* play, u32 missing, u32 param) {
 
 // ---- Owl statues ----
 
-static u32 read_owls(u32 param) {
+static u32 read_owls(PlayState* play, u32 param) {
     return SAVE_INFO.playerData.owlActivationFlags;
 }
 
@@ -132,7 +134,7 @@ static void apply_owls(PlayState* play, u32 missing, u32 param) {
 // Bit 2*i is dungeon i's compass, bit 2*i+1 its map. Boss keys reset every cycle, so they stay local.
 #define DUNGEON_ITEM_SLOTS 10
 
-static u32 read_dungeon_maps(u32 param) {
+static u32 read_dungeon_maps(PlayState* play, u32 param) {
     u32 bits = 0;
     for (int i = 0; i < DUNGEON_ITEM_SLOTS; i++) {
         u8 items = SAVE_INFO.inventory.dungeonItems[i];
@@ -159,7 +161,7 @@ static void apply_dungeon_maps(PlayState* play, u32 missing, u32 param) {
 
 // ---- World map (Tingle maps, explored regions, cleared clouds) ----
 
-static u32 read_regions(u32 param) {
+static u32 read_regions(PlayState* play, u32 param) {
     return SAVE_INFO.regionsVisited;
 }
 
@@ -167,7 +169,7 @@ static void apply_regions(PlayState* play, u32 missing, u32 param) {
     SAVE_INFO.regionsVisited |= missing;
 }
 
-static u32 read_clouds(u32 param) {
+static u32 read_clouds(PlayState* play, u32 param) {
     return SAVE_INFO.worldMapCloudVisibility;
 }
 
@@ -176,7 +178,7 @@ static void apply_clouds(PlayState* play, u32 missing, u32 param) {
 }
 
 // `param` is the index into scenesVisible[].
-static u32 read_scenes_visible(u32 param) {
+static u32 read_scenes_visible(PlayState* play, u32 param) {
     return SAVE_INFO.scenesVisible[param];
 }
 
@@ -196,7 +198,7 @@ static const char* const ability_names[32] = {
     "double defense",
 };
 
-static u32 read_abilities(u32 param) {
+static u32 read_abilities(PlayState* play, u32 param) {
     u32 bits = 0;
     if (SAVE_INFO.playerData.isMagicAcquired) {
         bits |= ABILITY_MAGIC;
@@ -228,7 +230,7 @@ static void apply_abilities(PlayState* play, u32 missing, u32 param) {
 
 // ---- Upgrades and heart containers (MAX) ----
 
-static u32 read_quiver(u32 param) {
+static u32 read_quiver(PlayState* play, u32 param) {
     return GET_CUR_UPG_VALUE(UPG_QUIVER);
 }
 
@@ -236,7 +238,7 @@ static void apply_quiver(PlayState* play, u32 value, u32 param) {
     Inventory_ChangeUpgrade(UPG_QUIVER, value);
 }
 
-static u32 read_bomb_bag(u32 param) {
+static u32 read_bomb_bag(PlayState* play, u32 param) {
     return GET_CUR_UPG_VALUE(UPG_BOMB_BAG);
 }
 
@@ -244,7 +246,7 @@ static void apply_bomb_bag(PlayState* play, u32 value, u32 param) {
     Inventory_ChangeUpgrade(UPG_BOMB_BAG, value);
 }
 
-static u32 read_wallet(u32 param) {
+static u32 read_wallet(PlayState* play, u32 param) {
     return GET_CUR_UPG_VALUE(UPG_WALLET);
 }
 
@@ -252,7 +254,7 @@ static void apply_wallet(PlayState* play, u32 value, u32 param) {
     Inventory_ChangeUpgrade(UPG_WALLET, value);
 }
 
-static u32 read_heart_capacity(u32 param) {
+static u32 read_heart_capacity(PlayState* play, u32 param) {
     return (u32)SAVE_INFO.playerData.healthCapacity;
 }
 
@@ -298,7 +300,7 @@ static bool is_stolen(u8 item) {
     return STOLEN_ITEM_1 == item || STOLEN_ITEM_2 == item;
 }
 
-static u32 read_items(u32 param) {
+static u32 read_items(PlayState* play, u32 param) {
     u32 bits = 0;
     for (int slot = 0; slot < 32; slot++) {
         if ((SHARED_ITEM_BITS & ITEM_BIT(slot)) && SAVE_INFO.inventory.items[slot] != ITEM_NONE) {
@@ -349,7 +351,7 @@ static const char* const equipment_names[32] = {
     "the Mirror Shield",
 };
 
-static u32 read_equipment(u32 param) {
+static u32 read_equipment(PlayState* play, u32 param) {
     u32 bits = 0;
     if (GET_CUR_EQUIP_VALUE(EQUIP_TYPE_SWORD) == EQUIP_VALUE_SWORD_GILDED || is_stolen(ITEM_SWORD_GILDED)) {
         bits |= EQUIP_GILDED_SWORD;
@@ -384,13 +386,208 @@ static void apply_equipment(PlayState* play, u32 missing, u32 param) {
     }
 }
 
+// ---- Reward and notebook flags (weekEventReg) ----
+
+// Only flags on this reviewed list are shared, and only if the game also keeps them across a Song of Time
+// (checked against its own table at startup). They mark rewards as already given, so nobody in the group
+// can collect the same heart piece, bottle or upgrade twice, plus Tingle map purchases and Bombers'
+// Notebook entries. Story and cutscene flags are deliberately not shared. Applied silently: the reward
+// itself has its own notice.
+extern u16 sPersistentCycleWeekEventRegs[100]; // 2 bits per flag; nonzero = survives a Song of Time.
+
+static const u16 shared_week_event_flags[] = {
+    WEEKEVENTREG_RECEIVED_DOGGY_RACETRACK_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_BANK_WALLET_UPGRADE,
+    WEEKEVENTREG_RECEIVED_KOTAKE_BOTTLE,
+    WEEKEVENTREG_RECEIVED_OCEANSIDE_WALLET_UPGRADE,
+    WEEKEVENTREG_RECEIVED_DEKU_PLAYGROUND_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_ALIENS_BOTTLE,
+    WEEKEVENTREG_RECEIVED_HONEY_AND_DARLING_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_GREAT_SPIN_ATTACK,
+    WEEKEVENTREG_RECEIVED_BEAVER_RACE_BOTTLE,
+    WEEKEVENTREG_RECEIVED_BEAVER_BROS_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_SEAHORSE_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_SWAMP_SHOOTING_GALLERY_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_TOWN_SHOOTING_GALLERY_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_FROG_CHOIR_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_EVAN_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_GORON_RACE_BOTTLE,
+    WEEKEVENTREG_RECEIVED_BUSINESS_SCRUB_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_SPIRIT_HOUSE_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_MARINE_RESEARCH_LAB_FISH_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_BANK_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_SWAMP_SHOOTING_GALLERY_QUIVER_UPGRADE,
+    WEEKEVENTREG_RECEIVED_TOWN_SHOOTING_GALLERY_QUIVER_UPGRADE,
+    WEEKEVENTREG_RECEIVED_MAYOR_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_SWORDSMANS_SCHOOL_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_ROSA_SISTERS_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_POSTMAN_COUNTING_GAME_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_KEATON_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_FISHERMANS_JUMPING_GAME_HEART_PIECE,
+    WEEKEVENTREG_RECEIVED_GOSSIP_STONE_GROTTO_HEART_PIECE,
+    // Unnamed in the decomp; each one is checked before a reward is offered.
+    WEEKEVENTREG_26_40, // Koume's boat archery heart piece (En_Dnh)
+    WEEKEVENTREG_50_02, // Anju's Grandmother, short story heart piece (En_Nb)
+    WEEKEVENTREG_50_04, // Anju's Grandmother, long story heart piece (En_Nb)
+    WEEKEVENTREG_57_08, // Madame Aroma's Chateau Romani bottle (En_Al)
+    WEEKEVENTREG_73_08, // Toilet hand heart piece (En_Bjt)
+    WEEKEVENTREG_81_08, // Postbox heart piece (En_Pst)
+    WEEKEVENTREG_87_04, // Swamp tourist guide pictograph heart piece (En_Shn)
+    WEEKEVENTREG_87_08, // Swamp tourist guide pictograph heart piece, Tingle picture (En_Shn)
+    // Tingle maps bought.
+    WEEKEVENTREG_TINGLE_MAP_BOUGHT_CLOCK_TOWN,
+    WEEKEVENTREG_TINGLE_MAP_BOUGHT_WOODFALL,
+    WEEKEVENTREG_TINGLE_MAP_BOUGHT_SNOWHEAD,
+    WEEKEVENTREG_TINGLE_MAP_BOUGHT_ROMANI_RANCH,
+    WEEKEVENTREG_TINGLE_MAP_BOUGHT_GREAT_BAY,
+    WEEKEVENTREG_TINGLE_MAP_BOUGHT_STONE_TOWER,
+};
+
+// Bombers' Notebook entries: all of weekEventReg[66..71] and the low 7 bits of [72]
+// (WEEKEVENTREG_BOMBERS_NOTEBOOK_EVENT_MET_ANJU through ..._RECEIVED_BREMEN_MASK). Only the notebook
+// reads these.
+#define NOTEBOOK_FIRST_BYTE 66
+#define NOTEBOOK_LAST_BYTE 72
+#define NOTEBOOK_LAST_BYTE_MASK 0x7F
+
+#define WEEK_EVENT_WORDS (ARRAY_COUNT(SAVE_INFO.weekEventReg) / 4)
+
+// Bit 8*k + j of word w is weekEventReg[4*w + k] & (1 << j).
+static u32 shared_week_event_bits[WEEK_EVENT_WORDS];
+
+static u8 persistent_week_event_mask(u32 index) {
+    u8 mask = 0;
+    for (int bit = 0; bit < 8; bit++) {
+        if ((sPersistentCycleWeekEventRegs[index] >> (2 * bit)) & 3) {
+            mask |= 1 << bit;
+        }
+    }
+    return mask;
+}
+
+static void build_shared_week_event_bits(void) {
+    u8 bytes[ARRAY_COUNT(SAVE_INFO.weekEventReg)] = { 0 };
+
+    for (u32 i = 0; i < ARRAY_COUNT(shared_week_event_flags); i++) {
+        bytes[shared_week_event_flags[i] >> 8] |= shared_week_event_flags[i] & 0xFF;
+    }
+    for (u32 i = NOTEBOOK_FIRST_BYTE; i <= NOTEBOOK_LAST_BYTE; i++) {
+        bytes[i] |= (i == NOTEBOOK_LAST_BYTE) ? NOTEBOOK_LAST_BYTE_MASK : 0xFF;
+    }
+    for (u32 i = 0; i < ARRAY_COUNT(bytes); i++) {
+        bytes[i] &= persistent_week_event_mask(i);
+        shared_week_event_bits[i / 4] |= (u32)bytes[i] << (8 * (i % 4));
+    }
+}
+
+static u32 read_week_events(PlayState* play, u32 word) {
+    u32 bits = 0;
+    for (int k = 0; k < 4; k++) {
+        bits |= (u32)SAVE_INFO.weekEventReg[4 * word + k] << (8 * k);
+    }
+    return bits;
+}
+
+static void apply_week_events(PlayState* play, u32 missing, u32 word) {
+    for (int k = 0; k < 4; k++) {
+        SAVE_INFO.weekEventReg[4 * word + k] |= (missing >> (8 * k)) & 0xFF;
+    }
+}
+
+// ---- Persistent scene flags (chests, switches, collectibles) ----
+
+// The chest, switch and collectible bits the game itself keeps across a Song of Time: opened chests with
+// permanent items, collected heart pieces and boss heart containers, and dungeon shortcuts. A row's param
+// is scene * 4 + field, with fields in the game table's order. Applied silently.
+typedef struct {
+    u32 switch0;
+    u32 switch1;
+    u32 chest;
+    u32 collectible;
+} PersistentCycleSceneFlags;
+
+extern PersistentCycleSceneFlags sPersistentCycleSceneFlags[SCENE_MAX];
+
+#define SCENE_FIELD_SWITCH0 0
+#define SCENE_FIELD_SWITCH1 1
+#define SCENE_FIELD_CHEST 2
+#define SCENE_FIELD_COLLECTIBLE 3
+#define SCENE_FIELDS 4
+
+static u32 persistent_scene_mask(u32 scene, u32 field) {
+    const PersistentCycleSceneFlags* flags = &sPersistentCycleSceneFlags[scene];
+    switch (field) {
+        case SCENE_FIELD_SWITCH0:
+            return flags->switch0;
+        case SCENE_FIELD_SWITCH1:
+            return flags->switch1;
+        case SCENE_FIELD_CHEST:
+            return flags->chest;
+        default:
+            return flags->collectible;
+    }
+}
+
+static u32* cycle_scene_field(u32 scene, u32 field) {
+    CycleSceneFlags* flags = &gSaveContext.cycleSceneFlags[scene];
+    switch (field) {
+        case SCENE_FIELD_SWITCH0:
+            return &flags->switch0;
+        case SCENE_FIELD_SWITCH1:
+            return &flags->switch1;
+        case SCENE_FIELD_CHEST:
+            return &flags->chest;
+        default:
+            return &flags->collectible;
+    }
+}
+
+// While we're in a scene its flags live in play->actorCtx.sceneFlags; cycleSceneFlags is only refreshed
+// from them when we leave, so that's where reads and writes must go. Mirrors Actor_InitContext and
+// Play_SaveCycleSceneFlags: scene variants (e.g. spring Mountain Village) share one entry, except that
+// Inverted Stone Tower Temple keeps its own collectible flags.
+static u32* live_scene_field(PlayState* play, u32 scene, u32 field) {
+    s16 current = Play_GetOriginalSceneId(play->sceneId);
+    if (field == SCENE_FIELD_COLLECTIBLE && play->sceneId == SCENE_INISIE_R) {
+        current = SCENE_INISIE_R;
+    }
+    if (scene != (u32)current) {
+        return NULL;
+    }
+    ActorContextSceneFlags* flags = &play->actorCtx.sceneFlags;
+    switch (field) {
+        case SCENE_FIELD_SWITCH0:
+            return &flags->switches[0];
+        case SCENE_FIELD_SWITCH1:
+            return &flags->switches[1];
+        case SCENE_FIELD_CHEST:
+            return &flags->chest;
+        default:
+            return &flags->collectible[0];
+    }
+}
+
+static u32 read_scene_flags(PlayState* play, u32 param) {
+    u32* live = live_scene_field(play, param / SCENE_FIELDS, param % SCENE_FIELDS);
+    return live != NULL ? *live : *cycle_scene_field(param / SCENE_FIELDS, param % SCENE_FIELDS);
+}
+
+// An object already spawned in front of us (e.g. a chest) keeps its look until the room reloads.
+static void apply_scene_flags(PlayState* play, u32 missing, u32 param) {
+    u32* live = live_scene_field(play, param / SCENE_FIELDS, param % SCENE_FIELDS);
+    *cycle_scene_field(param / SCENE_FIELDS, param % SCENE_FIELDS) |= missing;
+    if (live != NULL) {
+        *live |= missing;
+    }
+}
+
 // ---- Category table ----
 
 typedef struct {
     u32 key;
     u32 shared_bits; // OR keys: which bits are shared. MAX keys: 0.
     u32 max_value;   // MAX keys: the largest valid value, so a bad server value can't corrupt the save.
-    u32 (*read)(u32 param);
+    u32 (*read)(PlayState* play, u32 param);
     // OR keys get the missing bits; MAX keys get the new value.
     void (*apply)(PlayState* play, u32 value, u32 param);
     const char* const* bit_names; // OR keys: per-bit notice text; NULL entries fall back to `label`.
@@ -398,7 +595,7 @@ typedef struct {
     u32 param; // Passed to read/apply, so one pair of functions can serve several rows (e.g. an array index).
 } SyncCategory;
 
-static const SyncCategory categories[] = {
+static const SyncCategory fixed_categories[] = {
     { KEY_MASKS, (1u << SHARED_MASK_COUNT) - 1, 0, read_masks, apply_masks, mask_names, "a mask", 0 },
     { KEY_QUEST, SHARED_QUEST_BITS, 0, read_quest, apply_quest, quest_names, "quest progress", 0 },
     { KEY_OWLS, 0xFFFF, 0, read_owls, apply_owls, NULL, "an owl statue", 0 },
@@ -425,6 +622,46 @@ static const SyncCategory categories[] = {
     { KEY_EQUIPMENT, EQUIP_GILDED_SWORD | EQUIP_MIRROR_SHIELD, 0, read_equipment, apply_equipment, equipment_names,
       NULL, 0 },
 };
+
+// The fixed rows plus the flag rows, which are built from the game's own tables on first use.
+#define MAX_CATEGORIES 160
+
+static SyncCategory categories[MAX_CATEGORIES];
+static u32 category_count;
+
+static void add_category(SyncCategory row) {
+    if (category_count < MAX_CATEGORIES) {
+        categories[category_count++] = row;
+    }
+    else {
+        recomp_printf("MMChat: too many co-op sync rows, key 0x%04X not shared\n", row.key);
+    }
+}
+
+static void build_categories(void) {
+    for (u32 i = 0; i < ARRAY_COUNT(fixed_categories); i++) {
+        add_category(fixed_categories[i]);
+    }
+
+    build_shared_week_event_bits();
+    for (u32 w = 0; w < WEEK_EVENT_WORDS; w++) {
+        if (shared_week_event_bits[w] != 0) {
+            add_category((SyncCategory){ KEY_WEEK_EVENT_WORD(w), shared_week_event_bits[w], 0, read_week_events,
+                                         apply_week_events, NULL, NULL, w });
+        }
+    }
+
+    for (u32 scene = 0; scene < SCENE_MAX; scene++) {
+        for (u32 field = 0; field < SCENE_FIELDS; field++) {
+            u32 mask = persistent_scene_mask(scene, field);
+            if (mask != 0) {
+                add_category((SyncCategory){ KEY_SCENE_FLAGS(scene, field), mask, 0, read_scene_flags,
+                                             apply_scene_flags, NULL, NULL, scene * SCENE_FIELDS + field });
+            }
+        }
+    }
+    recomp_printf("MMChat: co-op sync shares %u values\n", category_count);
+}
 
 // ---- Notices ----
 
@@ -487,7 +724,7 @@ static void flush_notices(void) {
 // ---- Sync loop ----
 
 static void sync_category(PlayState* play, const SyncCategory* cat, bool can_receive) {
-    u32 local = cat->read(cat->param);
+    u32 local = cat->read(play, cat->param);
     u32 merged = chat_sync_get(cat->key);
 
     if (cat->shared_bits != 0) {
@@ -545,7 +782,10 @@ void coop_sync_update(PlayState* play) {
         can_receive = false;
     }
 
-    for (u32 i = 0; i < ARRAY_COUNT(categories); i++) {
+    if (category_count == 0) {
+        build_categories();
+    }
+    for (u32 i = 0; i < category_count; i++) {
         sync_category(play, &categories[i], can_receive);
     }
     flush_notices();

@@ -50,8 +50,27 @@ Merge rules used below:
 | Owl statues | `playerData.owlActivationFlags` | OR | **Implemented** (key `0x1003`).  |
 | Maps, compasses | `inventory.dungeonItems[i]` map and compass bits | OR | **Implemented** (key `0x1004`). Boss key bit is cleared on reset → local |
 | World map | `scenesVisible[]`, `regionsVisited`, `worldMapCloudVisibility` | OR | **Implemented** (keys `0x1005`, `0x1006`, `0x1010`-`0x1016`, applied silently). Tingle maps and explored regions |
-| Persistent event flags | `weekEventReg[]` bits marked persistent in `sPersistentCycleWeekEventRegs` | OR | **Review needed**, see open questions |
-| Persistent scene flags | chest / switch / collectible bits marked in `sPersistentCycleSceneFlags[scene]` | OR | Stored in `cycleSceneFlags[scene]`, **and** in `play->actorCtx.sceneFlags` for the scene you're in |
+| Persistent event flags | `weekEventReg[]` bits marked persistent in `sPersistentCycleWeekEventRegs` | OR | **Implemented** (keys `0x1100`+word, 18 used) for a reviewed allow-list only (below), intersected at startup with the game's persistent table |
+| Persistent scene flags | chest / switch / collectible bits marked in `sPersistentCycleSceneFlags[scene]` | OR | **Implemented** (keys `0x1200` + scene×4 + field, 63 used; rows built from the game's table at startup). Read from / written to `play->actorCtx.sceneFlags` for the scene you're in, `cycleSceneFlags[scene]` otherwise. Includes dungeon shortcut switches. Applied silently |
+
+## Shared `weekEventReg` flags
+
+Shared only if listed here **and** persistent (the mod checks `sPersistentCycleWeekEventRegs` at startup):
+
+- Every named `WEEKEVENTREG_RECEIVED_*` flag that survives a reset (29): heart-piece rewards, bottles
+  (Kotake, aliens, beaver race, Goron race), bank and Oceanside wallets, shooting-gallery quivers, Great
+  Spin Attack.
+- Unnamed reward checks, each read in its actor's code before a reward is offered: `26_40` Koume's boat
+  archery HP, `50_02` / `50_04` Anju's Grandmother's HPs, `57_08` Madame Aroma's Chateau Romani bottle,
+  `73_08` toilet hand HP, `81_08` postbox HP, `87_04` / `87_08` swamp tourist guide pictograph HPs.
+- `WEEKEVENTREG_TINGLE_MAP_BOUGHT_*` (6).
+- Bombers' Notebook entries: all of `weekEventReg[66..71]` and `[72] & 0x7F` (55). Only the notebook
+  reads these.
+
+Not shared: `ENTERED_*` (first-visit cutscenes), Tatl hints (`31_*`, `87_10`-`87_80`, used by `Elf_Msg6`),
+player-actor flags (`30_*`), story moments (`24_80` Goron child talked to, `51_04` Kafei's bell,
+`53_40` / `93_08` turtle, `59_04` clock tower door, `86_80` boss warp, `92_80`, `93_04` moon), and
+persistent flags no code reads (`03_80`, `15_20`, `24_02`, `31_20`, `38_20`, `72_80`).
 
 ## Per player (not shared)
 
@@ -75,7 +94,7 @@ persistent (rare for permanent rewards) would allow a second copy; those get fou
 
 ## Open questions (to verify in code or in-game)
 
-1. **Persistent `weekEventReg` bits**: some may mark story moments a player hasn't seen (e.g. an NPC
+1. ~~**Persistent `weekEventReg` bits**~~ (resolved: allow-list above): some may mark story moments a player hasn't seen (e.g. an NPC
    conversation). Sharing them could skip scenes or confuse quests. Proposal: share only a reviewed
    allow-list — bombers' notebook entries plus flags that gate permanent item rewards — and grow it.
 2. **Rewards gated by flags we don't share**: if Bob receives an item but the giver's flag isn't shared,
