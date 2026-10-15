@@ -27,6 +27,10 @@ Requires Homebrew `llvm` and `lld` (Apple Clang can't target MIPS), `zip`, and `
 
 Each export has the signature `void f(uint8_t* rdram, recomp_context* ctx)`: arguments in `r4`-`r7`, return value in `r2`, game bytes at `(vaddr ^ 3) - 0xFFFFFFFF80000000`. The library must export `recomp_api_version = 1`, and every function must be listed under `native_libraries` in `mod.toml`.
 
-## Protocol (v1)
+## Protocol (v2)
 
-UTF-8 lines ending in `\n`, tab-separated fields, max 512 bytes. See the docstring in `server/mmchat_server.py`.
+UTF-8 lines ending in `\n`, tab-separated fields, max 512 bytes from clients. See the docstring in `server/mmchat_server.py`. Bump `PROTOCOL_VERSION` in the server and `MMCHAT_PROTOCOL_VERSION` in `native/chat_client.h` together on incompatible changes.
+
+## Presence
+
+The mod reports `play->sceneId` and the current day every frame (scene -1 outside normal gameplay); the native client sends `WHERE` only on change and after each `WELCOME`. Scene names come from `native/scene_names.h`, generated from the decomp by `tools/gen_scene_names.py` (rerun it if the `mm-decomp` submodule is updated).

@@ -3,17 +3,17 @@
 [manifest]
 
 id = "mm_chat"
-version = "0.1.0"
+version = "0.2.0"
 display_name = "MMChat"
 description = """
 Text chat with friends while you play. One player runs the MMChat server; everyone connects to it.
 
-Hold L and press R during gameplay to open the chat window. New messages also pop up in the \
-corner while the window is closed.
+Hold L and press R during gameplay to open the chat window, which also lists who's online \
+and where they are. New messages pop up in the corner while the window is closed.
 
 The server, name and password below are filled into the chat window when the game starts."""
 short_description = "Chat with friends. Hold L, press R in-game."
-authors = [ "fer" ]
+authors = [ "Fernando Gomez-Tagle" ]
 game_id = "mm"
 minimum_recomp_version = "1.2.2"
 
@@ -33,7 +33,11 @@ native_libraries = [
         "chat_get_error",
         "chat_get_name",
         "chat_send",
-        "chat_poll"
+        "chat_poll",
+        "chat_set_location",
+        "chat_roster_version",
+        "chat_roster_count",
+        "chat_roster_get"
     ] }
 ]
 

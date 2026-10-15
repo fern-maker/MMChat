@@ -38,6 +38,21 @@ static void join_text(char* out, u32 out_len, const char* a, const char* b) {
     copy_text(out + used, out_len - used, b);
 }
 
+// Writes a non-negative number as decimal text.
+static void number_text(char* out, u32 out_len, u32 value) {
+    char digits[12];
+    int count = 0;
+    do {
+        digits[count++] = (char)('0' + value % 10);
+        value /= 10;
+    } while (value != 0 && count < (int)sizeof(digits));
+    u32 i = 0;
+    for (; i + 1 < out_len && count > 0; i++) {
+        out[i] = digits[--count];
+    }
+    out[i] = '\0';
+}
+
 static void history_push(const char* line) {
     copy_text(history[history_head], LINE_CHARS, line);
     history_head = (history_head + 1) % HISTORY_LINES;
@@ -65,6 +80,8 @@ static RecompuiResource password_input;
 static RecompuiResource connect_button;
 static RecompuiResource disconnect_button;
 static RecompuiResource log_labels[LOG_LABELS];
+static RecompuiResource roster_title_label;
+static RecompuiResource roster_labels[CHAT_MAX_PLAYERS];
 static RecompuiResource message_input;
 static RecompuiResource send_button;
 static RecompuiResource close_button;
@@ -76,6 +93,8 @@ static bool panel_shown;
 static bool overlay_shown;
 static int overlay_frames_left;
 static s32 shown_status = -1;
+static u32 shown_roster_version;
+static bool roster_drawn;
 
 // UI callbacks run with their context already open; game hooks must open it themselves.
 static bool in_panel_callback;
@@ -94,9 +113,28 @@ static void end_panel_edit(void) {
 
 // ---- Refreshing ----
 
+static void refresh_roster(void) {
+    s32 count = chat_roster_count();
+    char text[LINE_CHARS];
+    char number[12];
+
+    number_text(number, sizeof(number), (u32)count);
+    join_text(text, sizeof(text), "Online: ", number);
+    recompui_set_text(roster_title_label, count > 0 ? text : "Online: not connected");
+
+    for (int i = 0; i < CHAT_MAX_PLAYERS; i++) {
+        if (i >= count || chat_roster_get(i, text, sizeof(text)) < 0) {
+            text[0] = '\0';
+        }
+        recompui_set_text(roster_labels[i], text);
+    }
+}
+
 static void refresh_panel(void) {
     s32 status = chat_status();
-    if (status == shown_status && !history_dirty) {
+    u32 roster_version = chat_roster_version();
+    bool roster_changed = !roster_drawn || roster_version != shown_roster_version;
+    if (status == shown_status && !history_dirty && !roster_changed) {
         return;
     }
 
@@ -129,6 +167,11 @@ static void refresh_panel(void) {
             recompui_set_text(log_labels[i], history_get(LOG_LABELS - 1 - i));
         }
         history_dirty = false;
+    }
+    if (roster_changed) {
+        refresh_roster();
+        shown_roster_version = roster_version;
+        roster_drawn = true;
     }
     end_panel_edit();
 }
@@ -312,7 +355,7 @@ static void create_panel(void) {
     RecompuiResource panel = recompui_create_element(panel_context, root);
     recompui_set_display(panel, DISPLAY_FLEX);
     recompui_set_flex_direction(panel, FLEX_DIRECTION_COLUMN);
-    recompui_set_width(panel, 1200.0f, UNIT_DP);
+    recompui_set_width(panel, 1500.0f, UNIT_DP);
     recompui_set_max_width(panel, 92.0f, UNIT_PERCENT);
     recompui_set_padding(panel, 24.0f, UNIT_DP);
     recompui_set_gap(panel, 14.0f, UNIT_DP);
@@ -348,11 +391,17 @@ static void create_panel(void) {
     connect_button = create_button(connect_row, "Connect", BUTTONSTYLE_PRIMARY);
     disconnect_button = create_button(connect_row, "Disconnect", BUTTONSTYLE_SECONDARY);
 
-    RecompuiResource log = recompui_create_element(panel_context, panel);
+    // Message log on the left, who's online on the right.
+    RecompuiResource middle_row = create_row(panel);
+    recompui_set_align_items(middle_row, ALIGN_ITEMS_STRETCH);
+    recompui_set_height(middle_row, 520.0f, UNIT_DP);
+
+    RecompuiResource log = recompui_create_element(panel_context, middle_row);
     recompui_set_display(log, DISPLAY_FLEX);
     recompui_set_flex_direction(log, FLEX_DIRECTION_COLUMN);
     recompui_set_justify_content(log, JUSTIFY_CONTENT_FLEX_END);
-    recompui_set_height(log, 520.0f, UNIT_DP);
+    recompui_set_flex_grow(log, 1.0f);
+    recompui_set_flex_basis(log, 0.0f, UNIT_DP);
     recompui_set_overflow(log, OVERFLOW_HIDDEN);
     recompui_set_padding(log, 12.0f, UNIT_DP);
     recompui_set_gap(log, 4.0f, UNIT_DP);
@@ -360,6 +409,21 @@ static void create_panel(void) {
     recompui_set_background_color(log, &log_color);
     for (int i = 0; i < LOG_LABELS; i++) {
         log_labels[i] = recompui_create_label(panel_context, log, "", LABELSTYLE_NORMAL);
+    }
+
+    RecompuiResource roster_box = recompui_create_element(panel_context, middle_row);
+    recompui_set_display(roster_box, DISPLAY_FLEX);
+    recompui_set_flex_direction(roster_box, FLEX_DIRECTION_COLUMN);
+    recompui_set_width(roster_box, 400.0f, UNIT_DP);
+    recompui_set_flex_shrink(roster_box, 0.0f);
+    recompui_set_overflow(roster_box, OVERFLOW_HIDDEN);
+    recompui_set_padding(roster_box, 12.0f, UNIT_DP);
+    recompui_set_gap(roster_box, 4.0f, UNIT_DP);
+    recompui_set_border_radius(roster_box, 8.0f, UNIT_DP);
+    recompui_set_background_color(roster_box, &log_color);
+    roster_title_label = recompui_create_label(panel_context, roster_box, "Online: not connected", LABELSTYLE_NORMAL);
+    for (int i = 0; i < CHAT_MAX_PLAYERS; i++) {
+        roster_labels[i] = recompui_create_label(panel_context, roster_box, "", LABELSTYLE_SMALL);
     }
 
     RecompuiResource message_row = create_row(panel);
@@ -407,8 +471,17 @@ void on_init() {
     recomp_printf("[mm_chat] loaded, hold L and press R in-game to open chat\n");
 }
 
-// Runs every gameplay frame: opens the panel on L+R, pulls new messages, and fades the overlay.
+// Runs every gameplay frame: reports our location, opens the panel on L+R,
+// pulls new messages, and fades the overlay.
 RECOMP_HOOK("Play_UpdateMain") void on_play_update(PlayState* play) {
+    // The title screen's attract demo also runs as gameplay, so only count real play.
+    if (gSaveContext.gameMode == GAMEMODE_NORMAL) {
+        chat_set_location(play->sceneId, CURRENT_DAY);
+    }
+    else {
+        chat_set_location(CHAT_SCENE_NONE, 0);
+    }
+
     Input* input = CONTROLLER1(&play->state);
     if (CHECK_BTN_ALL(input->cur.button, BTN_L) && CHECK_BTN_ALL(input->press.button, BTN_R)) {
         set_panel_shown(true);

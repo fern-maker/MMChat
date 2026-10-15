@@ -9,8 +9,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define MMCHAT_PROTOCOL_VERSION "1"
+#define MMCHAT_PROTOCOL_VERSION "2"
 #define MMCHAT_MAX_LINE 512
+#define MMCHAT_MAX_PLAYERS 16
+#define MMCHAT_SCENE_NONE (-1) // Title screen, file select, credits.
 
 typedef enum {
     MMCHAT_DISCONNECTED = 0,
@@ -35,5 +37,15 @@ int mmchat_send(const char* text);
 // Pops the oldest incoming display line ("Name: text" or "* notice") into `out`.
 // Returns its length, or -1 if there is nothing to read.
 int mmchat_poll(char* out, size_t out_len);
+
+// Records where this player is. Cheap to call every frame; the server is only told about changes.
+void mmchat_set_location(int scene, int day);
+
+// Increments whenever the player list changes, so callers can skip redrawing otherwise.
+uint32_t mmchat_roster_version(void);
+int mmchat_roster_count(void);
+// Copies roster entry `index` as a display line, e.g. "Alice - South Clock Town (Day 2)".
+// Returns its length, or -1 if `index` is out of range.
+int mmchat_roster_get(int index, char* out, size_t out_len);
 
 #endif

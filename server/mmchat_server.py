@@ -10,12 +10,15 @@ Protocol: UTF-8 text lines terminated by "\\n", fields separated by tabs.
   Client -> server
     HELLO <version> <name> <password>   first line, required
     SAY <text>
+    WHERE <scene id> <day>              scene -1 means title screen / menus
     PING
   Server -> client
     WELCOME <assigned name>             name may get a numeric suffix if taken
     ERROR <reason>                      server closes the connection afterwards
     CHAT <name> <text>
     INFO <text>                         joins, leaves, notices
+    ROSTER <n> [<name> <scene id> <day>] * n
+                                        sent to everyone on join, leave and move
     PONG
 """
 
@@ -24,7 +27,7 @@ import asyncio
 import socket
 import time
 
-PROTOCOL_VERSION = "1"
+PROTOCOL_VERSION = "2"
 DEFAULT_PORT = 47474
 MAX_LINE_BYTES = 512
 MAX_NAME_CHARS = 16
@@ -34,6 +37,12 @@ HELLO_TIMEOUT_S = 10
 IDLE_TIMEOUT_S = 120
 RATE_LIMIT_MESSAGES = 5
 RATE_LIMIT_WINDOW_S = 3.0
+# Location updates only happen on scene changes; anything faster is a broken or abusive client.
+WHERE_LIMIT = 10
+WHERE_WINDOW_S = 3.0
+SCENE_NONE = -1
+MAX_SCENE_ID = 255
+MAX_DAY = 4
 
 
 def clean(text, limit):
@@ -42,22 +51,41 @@ def clean(text, limit):
     return text.strip()[:limit]
 
 
+def parse_int(text, low, high):
+    """Returns the integer in `text` if it is within [low, high], else None."""
+    try:
+        value = int(text)
+    except ValueError:
+        return None
+    return value if low <= value <= high else None
+
+
+class RateLimiter:
+    def __init__(self, limit, window):
+        self.limit = limit
+        self.window = window
+        self.recent = []
+
+    def allow(self):
+        now = time.monotonic()
+        self.recent = [t for t in self.recent if now - t < self.window]
+        if len(self.recent) >= self.limit:
+            return False
+        self.recent.append(now)
+        return True
+
+
 class Client:
     def __init__(self, name, writer):
         self.name = name
         self.writer = writer
-        self.recent = []
+        self.scene = SCENE_NONE
+        self.day = 0
+        self.chat_limiter = RateLimiter(RATE_LIMIT_MESSAGES, RATE_LIMIT_WINDOW_S)
+        self.where_limiter = RateLimiter(WHERE_LIMIT, WHERE_WINDOW_S)
 
     def send(self, *fields):
         self.writer.write(("\t".join(fields) + "\n").encode("utf-8"))
-
-    def allow_message(self):
-        now = time.monotonic()
-        self.recent = [t for t in self.recent if now - t < RATE_LIMIT_WINDOW_S]
-        if len(self.recent) >= RATE_LIMIT_MESSAGES:
-            return False
-        self.recent.append(now)
-        return True
 
 
 class ChatServer:
@@ -71,6 +99,12 @@ class ChatServer:
     def broadcast(self, *fields):
         for client in list(self.clients.values()):
             client.send(*fields)
+
+    def broadcast_roster(self):
+        fields = ["ROSTER", str(len(self.clients))]
+        for client in self.clients.values():
+            fields += [client.name, str(client.scene), str(client.day)]
+        self.broadcast(*fields)
 
     def unique_name(self, wanted):
         name = wanted or "Player"
@@ -99,7 +133,7 @@ class ChatServer:
                 return
             _, version, wanted, password = fields
             if version != PROTOCOL_VERSION:
-                writer.write(f"ERROR\tServer speaks protocol {PROTOCOL_VERSION}, you sent {clean(version, 8)}\n".encode())
+                writer.write(f"ERROR\tMMChat version mismatch with the server (protocol {clean(version, 8)} vs {PROTOCOL_VERSION}); everyone needs the same release\n".encode())
                 return
             if self.password and password != self.password:
                 writer.write(b"ERROR\tWrong password\n")
@@ -113,6 +147,7 @@ class ChatServer:
             self.clients[client.name] = client
             client.send("WELCOME", client.name)
             self.broadcast("INFO", f"{client.name} joined")
+            self.broadcast_roster()
             self.log(f"{client.name} joined from {peer[0]} ({len(self.clients)} online)")
 
             while True:
@@ -121,11 +156,22 @@ class ChatServer:
                     text = clean(fields[1], MAX_TEXT_CHARS)
                     if not text:
                         continue
-                    if not client.allow_message():
+                    if not client.chat_limiter.allow():
                         client.send("INFO", "Slow down, you're sending messages too fast")
                         continue
                     self.broadcast("CHAT", client.name, text)
                     self.log(f"<{client.name}> {text}")
+                elif fields[0] == "WHERE" and len(fields) == 3:
+                    scene = parse_int(fields[1], SCENE_NONE, MAX_SCENE_ID)
+                    day = parse_int(fields[2], 0, MAX_DAY)
+                    if scene is None or day is None:
+                        continue
+                    if (scene, day) == (client.scene, client.day):
+                        continue
+                    client.scene, client.day = scene, day
+                    # Over the limit, the change still shows up in the next roster anyone triggers.
+                    if client.where_limiter.allow():
+                        self.broadcast_roster()
                 elif fields[0] == "PING":
                     client.send("PONG")
                 else:
@@ -137,6 +183,7 @@ class ChatServer:
             if client is not None and self.clients.get(client.name) is client:
                 del self.clients[client.name]
                 self.broadcast("INFO", f"{client.name} left")
+                self.broadcast_roster()
                 self.log(f"{client.name} left ({len(self.clients)} online)")
             try:
                 await writer.drain()

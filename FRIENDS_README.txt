@@ -23,6 +23,10 @@ CHAT
   In the Mods menu, set Server (e.g. 100.101.102.103:47474), Your Name,
   and Server Password. Then in-game hold L and press R to open the chat
   window, press Connect, type, and press Send. New messages pop up in the
-  corner while the window is closed.
+  corner while the window is closed. The right side of the window lists
+  who's online and which area and day they're in.
+
+  Everyone (and the server) needs the same MMChat release; mismatched
+  versions get a "version mismatch" error when connecting.
 
 Messages are not encrypted; chat with people you trust.

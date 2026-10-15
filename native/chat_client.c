@@ -1,6 +1,8 @@
 #include "chat_client.h"
+#include "scene_names.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -50,6 +52,9 @@
 #define INCOMING_SLOTS 64
 #define OUTGOING_SLOTS 16
 #define DISPLAY_LINE 320
+// Roster lines carry every player, so they can be much longer than chat lines.
+#define RECEIVE_BUFFER 8192
+#define MAX_FIELDS (2 + MMCHAT_MAX_PLAYERS * 3)
 
 // ---- Shared state (guarded by `lock`) ----
 
@@ -63,6 +68,21 @@ static int incoming_head, incoming_count;
 
 static char outgoing[OUTGOING_SLOTS][MMCHAT_MAX_LINE];
 static int outgoing_head, outgoing_count;
+
+typedef struct {
+    char name[64];
+    int scene;
+    int day;
+} RosterEntry;
+
+static RosterEntry roster[MMCHAT_MAX_PLAYERS];
+static int roster_count;
+static uint32_t roster_version;
+
+// This player's location; `location_dirty` means the server hasn't been told yet.
+static int my_scene = MMCHAT_SCENE_NONE;
+static int my_day;
+static int location_dirty;
 
 // Connection parameters, copied for the worker thread.
 static char conn_host[256];
@@ -115,6 +135,14 @@ static void push_incoming(const char* line) {
     UNLOCK();
 }
 
+// Caller must hold `lock`.
+static void clear_roster_locked(void) {
+    if (roster_count != 0) {
+        roster_count = 0;
+        roster_version++;
+    }
+}
+
 static void set_error(const char* message) {
     char line[DISPLAY_LINE];
     snprintf(line, sizeof(line), "* %s", message);
@@ -122,7 +150,19 @@ static void set_error(const char* message) {
     status = MMCHAT_ERROR;
     copy_string(last_error, sizeof(last_error), message);
     push_incoming_locked(line);
+    clear_roster_locked();
     UNLOCK();
+}
+
+// Parses a whole decimal string (optionally negative). Returns 0 if it isn't one.
+static int parse_int(const char* text, int* out) {
+    char* end;
+    long value = strtol(text, &end, 10);
+    if (*text == '\0' || *end != '\0' || value < -100000 || value > 100000) {
+        return 0;
+    }
+    *out = (int)value;
+    return 1;
 }
 
 static int should_stop(void) {
@@ -215,10 +255,10 @@ static socket_t connect_with_timeout(const char* host, const char* port) {
 // Turns one server line into a display line, updating state as needed.
 // Returns 0 if the server rejected us and the connection should end.
 static int handle_server_line(char* line) {
-    char* fields[4] = { 0 };
+    char* fields[MAX_FIELDS] = { 0 };
     int count = 0;
     char* cursor = line;
-    while (count < 4) {
+    while (count < MAX_FIELDS) {
         fields[count++] = cursor;
         char* tab = strchr(cursor, '\t');
         if (tab == NULL) {
@@ -243,6 +283,26 @@ static int handle_server_line(char* line) {
         status = MMCHAT_CONNECTED;
         copy_string(assigned_name, sizeof(assigned_name), fields[1]);
         push_incoming_locked(display);
+        location_dirty = 1; // A fresh session doesn't know where we are yet.
+        UNLOCK();
+    }
+    else if (strcmp(fields[0], "ROSTER") == 0 && count >= 2) {
+        // ROSTER <n> then <name> <scene> <day> for each player.
+        int players;
+        if (!parse_int(fields[1], &players) || players < 0 || players > MMCHAT_MAX_PLAYERS || count != 2 + players * 3) {
+            return 1;
+        }
+        RosterEntry parsed[MMCHAT_MAX_PLAYERS];
+        for (int i = 0; i < players; i++) {
+            copy_string(parsed[i].name, sizeof(parsed[i].name), fields[2 + i * 3]);
+            if (!parse_int(fields[3 + i * 3], &parsed[i].scene) || !parse_int(fields[4 + i * 3], &parsed[i].day)) {
+                return 1;
+            }
+        }
+        LOCK();
+        memcpy(roster, parsed, sizeof(RosterEntry) * (size_t)players);
+        roster_count = players;
+        roster_version++;
         UNLOCK();
     }
     else if (strcmp(fields[0], "ERROR") == 0 && count == 2) {
@@ -266,7 +326,7 @@ static void run_connection(void) {
         return;
     }
 
-    char buffer[MMCHAT_MAX_LINE * 2];
+    static char buffer[RECEIVE_BUFFER]; // Only one worker runs at a time.
     size_t buffered = 0;
     time_t last_sent = time(NULL);
 
@@ -313,14 +373,18 @@ static void run_connection(void) {
             }
         }
 
-        // Send everything queued by the game thread.
-        char pending[OUTGOING_SLOTS][MMCHAT_MAX_LINE];
+        // Send everything queued by the game thread, plus our location if it changed.
+        char pending[OUTGOING_SLOTS + 1][MMCHAT_MAX_LINE];
         int pending_count = 0;
         LOCK();
         while (outgoing_count > 0) {
             memcpy(pending[pending_count++], outgoing[outgoing_head], MMCHAT_MAX_LINE);
             outgoing_head = (outgoing_head + 1) % OUTGOING_SLOTS;
             outgoing_count--;
+        }
+        if (location_dirty && status == MMCHAT_CONNECTED) {
+            snprintf(pending[pending_count++], MMCHAT_MAX_LINE, "WHERE\t%d\t%d\n", my_scene, my_day);
+            location_dirty = 0;
         }
         UNLOCK();
 
@@ -344,26 +408,27 @@ static void run_connection(void) {
     close_socket(s);
 }
 
-#if defined(_WIN32)
-static DWORD WINAPI worker_main(LPVOID unused) {
-    (void)unused;
-    run_connection();
+static void finish_connection(void) {
     LOCK();
     if (status != MMCHAT_ERROR) {
         status = MMCHAT_DISCONNECTED;
     }
+    clear_roster_locked();
     UNLOCK();
+}
+
+#if defined(_WIN32)
+static DWORD WINAPI worker_main(LPVOID unused) {
+    (void)unused;
+    run_connection();
+    finish_connection();
     return 0;
 }
 #else
 static void* worker_main(void* unused) {
     (void)unused;
     run_connection();
-    LOCK();
-    if (status != MMCHAT_ERROR) {
-        status = MMCHAT_DISCONNECTED;
-    }
-    UNLOCK();
+    finish_connection();
     return NULL;
 }
 #endif
@@ -401,6 +466,7 @@ void mmchat_disconnect(void) {
     worker_running = 0;
     LOCK();
     status = MMCHAT_DISCONNECTED;
+    clear_roster_locked();
     UNLOCK();
 }
 
@@ -478,6 +544,64 @@ int mmchat_send(const char* text) {
     }
     UNLOCK();
     return queued;
+}
+
+void mmchat_set_location(int scene, int day) {
+    LOCK();
+    if (scene != my_scene || day != my_day) {
+        my_scene = scene;
+        my_day = day;
+        location_dirty = 1;
+    }
+    UNLOCK();
+}
+
+uint32_t mmchat_roster_version(void) {
+    LOCK();
+    uint32_t version = roster_version;
+    UNLOCK();
+    return version;
+}
+
+int mmchat_roster_count(void) {
+    LOCK();
+    int count = roster_count;
+    UNLOCK();
+    return count;
+}
+
+static const char* scene_display_name(int scene) {
+    if (scene == MMCHAT_SCENE_NONE) {
+        return "In menus";
+    }
+    if (scene >= 0 && scene < SCENE_NAME_COUNT && scene_names[scene] != NULL) {
+        return scene_names[scene];
+    }
+    return "Unknown area";
+}
+
+int mmchat_roster_get(int index, char* out, size_t out_len) {
+    char line[DISPLAY_LINE];
+    int found = 0;
+    LOCK();
+    if (index >= 0 && index < roster_count) {
+        const RosterEntry* entry = &roster[index];
+        const char* you = strcmp(entry->name, assigned_name) == 0 ? " (you)" : "";
+        // Days 1-3 are the three-day cycle; 0 and 4 are the intro and the final hours.
+        if (entry->scene != MMCHAT_SCENE_NONE && entry->day >= 1 && entry->day <= 3) {
+            snprintf(line, sizeof(line), "%s%s - %s, Day %d", entry->name, you, scene_display_name(entry->scene), entry->day);
+        }
+        else {
+            snprintf(line, sizeof(line), "%s%s - %s", entry->name, you, scene_display_name(entry->scene));
+        }
+        found = 1;
+    }
+    UNLOCK();
+    if (!found) {
+        return -1;
+    }
+    copy_string(out, out_len, line);
+    return out_len ? (int)strlen(out) : 0;
 }
 
 int mmchat_poll(char* out, size_t out_len) {

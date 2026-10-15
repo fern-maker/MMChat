@@ -63,7 +63,7 @@ $(C_OBJS): $(BUILD_DIR)/%.o : %.c | $(BUILD_DIRS)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $< -MMD -MF $(@:.o=.d) -c -o $@
 
 NATIVE_SRCS := native/chat_native.c native/chat_client.c
-NATIVE_HDRS := native/chat_client.h
+NATIVE_HDRS := native/chat_client.h native/scene_names.h
 
 # Universal binary, since the macOS game build ships for both arm64 and x86_64.
 $(NATIVE_LIB): $(NATIVE_SRCS) $(NATIVE_HDRS) | $(BUILD_DIR)

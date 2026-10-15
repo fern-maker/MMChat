@@ -150,6 +150,34 @@ EXPORT void chat_send(uint8_t* rdram, recomp_context* ctx) {
     return_s32(ctx, mmchat_send(text));
 }
 
+// void chat_set_location(s32 scene, s32 day)
+EXPORT void chat_set_location(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram;
+    mmchat_set_location((int)(int32_t)ctx->r4, (int)(int32_t)ctx->r5);
+}
+
+// u32 chat_roster_version(void)
+EXPORT void chat_roster_version(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram;
+    return_s32(ctx, (int32_t)mmchat_roster_version());
+}
+
+// s32 chat_roster_count(void)
+EXPORT void chat_roster_count(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram;
+    return_s32(ctx, mmchat_roster_count());
+}
+
+// s32 chat_roster_get(s32 index, char* out, u32 out_len): line length, or -1 if out of range
+EXPORT void chat_roster_get(uint8_t* rdram, recomp_context* ctx) {
+    char line[MMCHAT_MAX_LINE];
+    if (mmchat_roster_get((int)(int32_t)ctx->r4, line, sizeof(line)) < 0) {
+        return_s32(ctx, -1);
+        return;
+    }
+    return_s32(ctx, (int32_t)write_game_string(rdram, ctx->r5, (uint32_t)ctx->r6, line));
+}
+
 // s32 chat_poll(char* out, u32 out_len): line length, or -1 if no new lines
 EXPORT void chat_poll(uint8_t* rdram, recomp_context* ctx) {
     char line[MMCHAT_MAX_LINE];
