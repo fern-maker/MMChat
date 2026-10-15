@@ -1,0 +1,66 @@
+# Config file for MMChat, a chat mod for Majora's Mask: Recompiled.
+
+[manifest]
+
+id = "mm_chat"
+version = "0.1.0"
+display_name = "MMChat"
+description = """
+Text chat with friends while you play. One player runs the MMChat server; everyone connects to it.
+
+Hold L and press R during gameplay to open the chat window. New messages also pop up in the \
+corner while the window is closed.
+
+The server, name and password below are filled into the chat window when the game starts."""
+short_description = "Chat with friends. Hold L, press R in-game."
+authors = [ "fer" ]
+game_id = "mm"
+minimum_recomp_version = "1.2.2"
+
+dependencies = [
+]
+
+optional_dependencies = [
+]
+
+# The runtime loads mm_chat_native.dylib / .dll / .so from the mods folder, next to the .nrm.
+native_libraries = [
+    { name = "mm_chat_native", funcs = [
+        "chat_native_ping",
+        "chat_connect",
+        "chat_disconnect",
+        "chat_status",
+        "chat_get_error",
+        "chat_get_name",
+        "chat_send",
+        "chat_poll"
+    ] }
+]
+
+[inputs]
+elf_path = "build/mod.elf"
+mod_filename = "mm_chat"
+func_reference_syms_file = "Zelda64RecompSyms/mm.us.rev1.syms.toml"
+data_reference_syms_files = [ "Zelda64RecompSyms/mm.us.rev1.datasyms.toml", "Zelda64RecompSyms/mm.us.rev1.datasyms_static.toml" ]
+additional_files = [ ]
+
+[[manifest.config_options]]
+id = "server_address"
+name = "Server"
+description = "The host's address and port, e.g. 192.168.1.20:47474 or a Tailscale address."
+type = "String"
+default = "127.0.0.1:47474"
+
+[[manifest.config_options]]
+id = "player_name"
+name = "Your Name"
+description = "The name other players see. Up to 16 characters."
+type = "String"
+default = "Player"
+
+[[manifest.config_options]]
+id = "server_password"
+name = "Server Password"
+description = "Only needed if the host started the server with a password."
+type = "String"
+default = ""
