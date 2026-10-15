@@ -14,6 +14,10 @@ Mask keys for /sync: key 0x1001, one bit per mask slot in this order (bit 0 firs
   Postman, All-Night, Blast, Stone, Great Fairy, Deku, Keaton, Bremen, Bunny, Don Gero, Scents, Goron,
   Romani, Circus Leader, Kafei, Couple's, Truth, Zora, Kamaro, Gibdo, Garo, Captain's, Giant's
   e.g. Bunny Hood alone is /sync 0x1001 0x100
+Other keys: 0x1002 quest bits (bit 6 Sonata, 7 Lullaby, 8 Bossa Nova, 9 Elegy, 10 Oath, 13 Healing,
+  14 Epona, 15 Soaring, 16 Storms, 18 Notebook; 0-3 boss remains), 0x1003 owl statues, 0x1004 dungeon
+  maps/compasses, 0x1007 abilities (1 magic, 2 double magic, 4 double defense), 0x2101 quiver level (1-3),
+  0x2102 bomb bag level (1-3), 0x2103 wallet level (1-2), 0x2104 heart capacity (16 per heart, e.g. 0x50 = 5)
 """
 
 import argparse
@@ -31,10 +35,30 @@ sync_state = {}
 group = None
 
 
+QUEST_NAMES = {0: "Odolwa's Remains", 1: "Goht's Remains", 2: "Gyorg's Remains", 3: "Twinmold's Remains",
+               6: "Sonata", 7: "Goron Lullaby", 8: "Bossa Nova", 9: "Elegy", 10: "Oath to Order",
+               11: "Saria's Song", 13: "Song of Healing", 14: "Epona's Song", 15: "Song of Soaring",
+               16: "Song of Storms", 17: "Sun's Song", 18: "Bombers' Notebook", 24: "Lullaby Intro"}
+ABILITY_NAMES = {0: "magic", 1: "double magic", 2: "double defense"}
+# Keys from src/coop_sync.c. Bits 12-15 are the merge rule (1 = OR, 2 = MAX).
+KEY_LABELS = {0x1001: "masks", 0x1002: "quest", 0x1003: "owl statues (bits)", 0x1004: "dungeon maps/compasses (bits)",
+              0x1005: "regions visited (bits)", 0x1006: "map clouds (bits)", 0x1007: "abilities",
+              0x2101: "quiver level", 0x2102: "bomb bag level", 0x2103: "wallet level",
+              0x2104: "heart capacity (16 per heart)"}
+for i in range(7):
+    KEY_LABELS[0x1010 + i] = f"Tingle map scenes {i} (bits)"
+
+
 def describe(key, value):
     if key == MASK_KEY:
         masks = [name for bit, name in enumerate(MASK_NAMES) if value & (1 << bit)]
         return f"masks: {', '.join(masks) or 'none'}"
+    if key == 0x1002:
+        return f"quest: {', '.join(n for b, n in QUEST_NAMES.items() if value & (1 << b)) or 'none'}"
+    if key == 0x1007:
+        return f"abilities: {', '.join(n for b, n in ABILITY_NAMES.items() if value & (1 << b)) or 'none'}"
+    if key in KEY_LABELS:
+        return f"{KEY_LABELS[key]} = {value:#x}"
     return f"key {key:#06x} = {value:#010x}"
 
 
