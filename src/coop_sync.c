@@ -13,7 +13,7 @@
 // Merge rules only ever add progression, so this can't take anything away.
 //
 // Each shared value is a row in `categories` below: a key, how to read it from the save, and how to
-// write a merged value back.
+// write a merged value back. A row's `param` lets one read/apply pair serve several rows.
 
 #define SAVE_INFO (gSaveContext.save.saveInfo)
 
@@ -55,7 +55,7 @@ static const char* const mask_names[32] = {
     "Garo's Mask", "the Captain's Hat", "the Giant's Mask",
 };
 
-static u32 read_masks(void) {
+static u32 read_masks(u32 param) {
     u32 bits = 0;
     for (int i = 0; i < SHARED_MASK_COUNT; i++) {
         if (SAVE_INFO.inventory.items[FIRST_MASK_SLOT + i] != ITEM_NONE) {
@@ -65,7 +65,7 @@ static u32 read_masks(void) {
     return bits;
 }
 
-static void apply_masks(PlayState* play, u32 missing) {
+static void apply_masks(PlayState* play, u32 missing, u32 param) {
     for (int i = 0; i < SHARED_MASK_COUNT; i++) {
         if (missing & (1u << i)) {
             SAVE_INFO.inventory.items[FIRST_MASK_SLOT + i] = mask_items[i];
@@ -107,21 +107,21 @@ static const char* const quest_names[32] = {
     [QUEST_SONG_LULLABY_INTRO] = "the Lullaby Intro",
 };
 
-static u32 read_quest(void) {
+static u32 read_quest(u32 param) {
     return SAVE_INFO.inventory.questItems;
 }
 
-static void apply_quest(PlayState* play, u32 missing) {
+static void apply_quest(PlayState* play, u32 missing, u32 param) {
     SAVE_INFO.inventory.questItems |= missing;
 }
 
 // ---- Owl statues ----
 
-static u32 read_owls(void) {
+static u32 read_owls(u32 param) {
     return SAVE_INFO.playerData.owlActivationFlags;
 }
 
-static void apply_owls(PlayState* play, u32 missing) {
+static void apply_owls(PlayState* play, u32 missing, u32 param) {
     SAVE_INFO.playerData.owlActivationFlags |= (u16)missing;
 }
 
@@ -130,7 +130,7 @@ static void apply_owls(PlayState* play, u32 missing) {
 // Bit 2*i is dungeon i's compass, bit 2*i+1 its map. Boss keys reset every cycle, so they stay local.
 #define DUNGEON_ITEM_SLOTS 10
 
-static u32 read_dungeon_maps(void) {
+static u32 read_dungeon_maps(u32 param) {
     u32 bits = 0;
     for (int i = 0; i < DUNGEON_ITEM_SLOTS; i++) {
         u8 items = SAVE_INFO.inventory.dungeonItems[i];
@@ -144,7 +144,7 @@ static u32 read_dungeon_maps(void) {
     return bits;
 }
 
-static void apply_dungeon_maps(PlayState* play, u32 missing) {
+static void apply_dungeon_maps(PlayState* play, u32 missing, u32 param) {
     for (int i = 0; i < DUNGEON_ITEM_SLOTS; i++) {
         if (missing & (1u << (2 * i))) {
             SAVE_INFO.inventory.dungeonItems[i] |= 1 << DUNGEON_COMPASS;
@@ -157,37 +157,30 @@ static void apply_dungeon_maps(PlayState* play, u32 missing) {
 
 // ---- World map (Tingle maps, explored regions, cleared clouds) ----
 
-static u32 read_regions(void) {
+static u32 read_regions(u32 param) {
     return SAVE_INFO.regionsVisited;
 }
 
-static void apply_regions(PlayState* play, u32 missing) {
+static void apply_regions(PlayState* play, u32 missing, u32 param) {
     SAVE_INFO.regionsVisited |= missing;
 }
 
-static u32 read_clouds(void) {
+static u32 read_clouds(u32 param) {
     return SAVE_INFO.worldMapCloudVisibility;
 }
 
-static void apply_clouds(PlayState* play, u32 missing) {
+static void apply_clouds(PlayState* play, u32 missing, u32 param) {
     SAVE_INFO.worldMapCloudVisibility |= missing;
 }
 
-#define SCENES_VISIBLE_FUNCS(i)                                     \
-    static u32 read_scenes_visible_##i(void) {                      \
-        return SAVE_INFO.scenesVisible[i];                          \
-    }                                                               \
-    static void apply_scenes_visible_##i(PlayState* play, u32 missing) { \
-        SAVE_INFO.scenesVisible[i] |= missing;                      \
-    }
+// `param` is the index into scenesVisible[].
+static u32 read_scenes_visible(u32 param) {
+    return SAVE_INFO.scenesVisible[param];
+}
 
-SCENES_VISIBLE_FUNCS(0)
-SCENES_VISIBLE_FUNCS(1)
-SCENES_VISIBLE_FUNCS(2)
-SCENES_VISIBLE_FUNCS(3)
-SCENES_VISIBLE_FUNCS(4)
-SCENES_VISIBLE_FUNCS(5)
-SCENES_VISIBLE_FUNCS(6)
+static void apply_scenes_visible(PlayState* play, u32 missing, u32 param) {
+    SAVE_INFO.scenesVisible[param] |= missing;
+}
 
 // ---- Great Fairy rewards: magic, double magic, double defense ----
 
@@ -201,7 +194,7 @@ static const char* const ability_names[32] = {
     "double defense",
 };
 
-static u32 read_abilities(void) {
+static u32 read_abilities(u32 param) {
     u32 bits = 0;
     if (SAVE_INFO.playerData.isMagicAcquired) {
         bits |= ABILITY_MAGIC;
@@ -216,7 +209,7 @@ static u32 read_abilities(void) {
 }
 
 // Mirrors the Great Fairy: set the flag and a fill target; the HUD then grows the meter on its own.
-static void apply_abilities(PlayState* play, u32 missing) {
+static void apply_abilities(PlayState* play, u32 missing, u32 param) {
     if (missing & (ABILITY_MAGIC | ABILITY_DOUBLE_MAGIC)) {
         SAVE_INFO.playerData.isMagicAcquired = true;
         if (missing & ABILITY_DOUBLE_MAGIC) {
@@ -233,36 +226,36 @@ static void apply_abilities(PlayState* play, u32 missing) {
 
 // ---- Upgrades and heart containers (MAX) ----
 
-static u32 read_quiver(void) {
+static u32 read_quiver(u32 param) {
     return GET_CUR_UPG_VALUE(UPG_QUIVER);
 }
 
-static void apply_quiver(PlayState* play, u32 value) {
+static void apply_quiver(PlayState* play, u32 value, u32 param) {
     Inventory_ChangeUpgrade(UPG_QUIVER, value);
 }
 
-static u32 read_bomb_bag(void) {
+static u32 read_bomb_bag(u32 param) {
     return GET_CUR_UPG_VALUE(UPG_BOMB_BAG);
 }
 
-static void apply_bomb_bag(PlayState* play, u32 value) {
+static void apply_bomb_bag(PlayState* play, u32 value, u32 param) {
     Inventory_ChangeUpgrade(UPG_BOMB_BAG, value);
 }
 
-static u32 read_wallet(void) {
+static u32 read_wallet(u32 param) {
     return GET_CUR_UPG_VALUE(UPG_WALLET);
 }
 
-static void apply_wallet(PlayState* play, u32 value) {
+static void apply_wallet(PlayState* play, u32 value, u32 param) {
     Inventory_ChangeUpgrade(UPG_WALLET, value);
 }
 
-static u32 read_heart_capacity(void) {
+static u32 read_heart_capacity(u32 param) {
     return (u32)SAVE_INFO.playerData.healthCapacity;
 }
 
 // Like a heart container: raise the maximum and fill the new hearts.
-static void apply_heart_capacity(PlayState* play, u32 value) {
+static void apply_heart_capacity(PlayState* play, u32 value, u32 param) {
     s16 gained = (s16)value - SAVE_INFO.playerData.healthCapacity;
     SAVE_INFO.playerData.healthCapacity = (s16)value;
     SAVE_INFO.playerData.health += gained;
@@ -274,34 +267,36 @@ typedef struct {
     u32 key;
     u32 shared_bits; // OR keys: which bits are shared. MAX keys: 0.
     u32 max_value;   // MAX keys: the largest valid value, so a bad server value can't corrupt the save.
-    u32 (*read)(void);
+    u32 (*read)(u32 param);
     // OR keys get the missing bits; MAX keys get the new value.
-    void (*apply)(PlayState* play, u32 value);
+    void (*apply)(PlayState* play, u32 value, u32 param);
     const char* const* bit_names; // OR keys: per-bit notice text; NULL entries fall back to `label`.
     const char* label;
+    u32 param; // Passed to read/apply, so one pair of functions can serve several rows (e.g. an array index).
 } SyncCategory;
 
 static const SyncCategory categories[] = {
-    { KEY_MASKS, (1u << SHARED_MASK_COUNT) - 1, 0, read_masks, apply_masks, mask_names, "a mask" },
-    { KEY_QUEST, SHARED_QUEST_BITS, 0, read_quest, apply_quest, quest_names, "quest progress" },
-    { KEY_OWLS, 0xFFFF, 0, read_owls, apply_owls, NULL, "an owl statue" },
+    { KEY_MASKS, (1u << SHARED_MASK_COUNT) - 1, 0, read_masks, apply_masks, mask_names, "a mask", 0 },
+    { KEY_QUEST, SHARED_QUEST_BITS, 0, read_quest, apply_quest, quest_names, "quest progress", 0 },
+    { KEY_OWLS, 0xFFFF, 0, read_owls, apply_owls, NULL, "an owl statue", 0 },
     { KEY_DUNGEON_MAPS, (1u << (2 * DUNGEON_ITEM_SLOTS)) - 1, 0, read_dungeon_maps, apply_dungeon_maps, NULL,
-      "a dungeon map or compass" },
-    { KEY_REGIONS, 0xFFFFFFFF, 0, read_regions, apply_regions, NULL, NULL },
-    { KEY_CLOUDS, 0xFFFFFFFF, 0, read_clouds, apply_clouds, NULL, NULL },
-    { KEY_SCENES_VISIBLE(0), 0xFFFFFFFF, 0, read_scenes_visible_0, apply_scenes_visible_0, NULL, NULL },
-    { KEY_SCENES_VISIBLE(1), 0xFFFFFFFF, 0, read_scenes_visible_1, apply_scenes_visible_1, NULL, NULL },
-    { KEY_SCENES_VISIBLE(2), 0xFFFFFFFF, 0, read_scenes_visible_2, apply_scenes_visible_2, NULL, NULL },
-    { KEY_SCENES_VISIBLE(3), 0xFFFFFFFF, 0, read_scenes_visible_3, apply_scenes_visible_3, NULL, NULL },
-    { KEY_SCENES_VISIBLE(4), 0xFFFFFFFF, 0, read_scenes_visible_4, apply_scenes_visible_4, NULL, NULL },
-    { KEY_SCENES_VISIBLE(5), 0xFFFFFFFF, 0, read_scenes_visible_5, apply_scenes_visible_5, NULL, NULL },
-    { KEY_SCENES_VISIBLE(6), 0xFFFFFFFF, 0, read_scenes_visible_6, apply_scenes_visible_6, NULL, NULL },
+      "a dungeon map or compass", 0 },
+    { KEY_REGIONS, 0xFFFFFFFF, 0, read_regions, apply_regions, NULL, NULL, 0 },
+    { KEY_CLOUDS, 0xFFFFFFFF, 0, read_clouds, apply_clouds, NULL, NULL, 0 },
+    { KEY_SCENES_VISIBLE(0), 0xFFFFFFFF, 0, read_scenes_visible, apply_scenes_visible, NULL, NULL, 0 },
+    { KEY_SCENES_VISIBLE(1), 0xFFFFFFFF, 0, read_scenes_visible, apply_scenes_visible, NULL, NULL, 1 },
+    { KEY_SCENES_VISIBLE(2), 0xFFFFFFFF, 0, read_scenes_visible, apply_scenes_visible, NULL, NULL, 2 },
+    { KEY_SCENES_VISIBLE(3), 0xFFFFFFFF, 0, read_scenes_visible, apply_scenes_visible, NULL, NULL, 3 },
+    { KEY_SCENES_VISIBLE(4), 0xFFFFFFFF, 0, read_scenes_visible, apply_scenes_visible, NULL, NULL, 4 },
+    { KEY_SCENES_VISIBLE(5), 0xFFFFFFFF, 0, read_scenes_visible, apply_scenes_visible, NULL, NULL, 5 },
+    { KEY_SCENES_VISIBLE(6), 0xFFFFFFFF, 0, read_scenes_visible, apply_scenes_visible, NULL, NULL, 6 },
     { KEY_ABILITIES, ABILITY_MAGIC | ABILITY_DOUBLE_MAGIC | ABILITY_DOUBLE_DEFENSE, 0, read_abilities,
-      apply_abilities, ability_names, NULL },
-    { KEY_QUIVER, 0, 3, read_quiver, apply_quiver, NULL, "a bigger quiver" },
-    { KEY_BOMB_BAG, 0, 3, read_bomb_bag, apply_bomb_bag, NULL, "a bigger bomb bag" },
-    { KEY_WALLET, 0, 2, read_wallet, apply_wallet, NULL, "a bigger wallet" },
-    { KEY_HEART_CAPACITY, 0, 20 * 0x10, read_heart_capacity, apply_heart_capacity, NULL, "a heart container" },
+      apply_abilities, ability_names, NULL, 0 },
+    { KEY_QUIVER, 0, 3, read_quiver, apply_quiver, NULL, "a bigger quiver", 0 },
+    { KEY_BOMB_BAG, 0, 3, read_bomb_bag, apply_bomb_bag, NULL, "a bigger bomb bag", 0 },
+    { KEY_WALLET, 0, 2, read_wallet, apply_wallet, NULL, "a bigger wallet", 0 },
+    { KEY_HEART_CAPACITY, 0, 20 * 0x10, read_heart_capacity, apply_heart_capacity, NULL, "a heart container",
+      0 },
 };
 
 // ---- Notices ----
@@ -365,7 +360,7 @@ static void flush_notices(void) {
 // ---- Sync loop ----
 
 static void sync_category(PlayState* play, const SyncCategory* cat, bool can_receive) {
-    u32 local = cat->read();
+    u32 local = cat->read(cat->param);
     u32 merged = chat_sync_get(cat->key);
 
     if (cat->shared_bits != 0) {
@@ -377,7 +372,7 @@ static void sync_category(PlayState* play, const SyncCategory* cat, bool can_rec
         if (!can_receive || missing == 0) {
             return;
         }
-        cat->apply(play, missing);
+        cat->apply(play, missing, cat->param);
         for (int bit = 0; bit < 32; bit++) {
             if (missing & (1u << bit)) {
                 const char* name = cat->bit_names != NULL ? cat->bit_names[bit] : NULL;
@@ -395,7 +390,7 @@ static void sync_category(PlayState* play, const SyncCategory* cat, bool can_rec
         if (!can_receive || merged <= local || merged > cat->max_value) {
             return;
         }
-        cat->apply(play, merged);
+        cat->apply(play, merged, cat->param);
         queue_notice(cat->key, cat->label);
     }
 }
@@ -416,6 +411,12 @@ void coop_sync_update(PlayState* play) {
     // intro can't be broken by, say, receiving the Deku Mask before the curse. Our own progress is still
     // reported from the start.
     bool can_receive = CHECK_QUEST_ITEM(QUEST_SONG_TIME) != 0;
+
+    // Changing the inventory under the pause menu's cursor could confuse it; received progress waits
+    // until the game is unpaused.
+    if (IS_PAUSED(&play->pauseCtx)) {
+        can_receive = false;
+    }
 
     for (u32 i = 0; i < ARRAY_COUNT(categories); i++) {
         sync_category(play, &categories[i], can_receive);
