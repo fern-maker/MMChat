@@ -101,7 +101,7 @@ persistent (rare for permanent rewards) would allow a second copy; those get fou
    Bob may be offered it again. Usually the game substitutes rupees, which is harmless; confirm case by case.
 3. ~~**Heart piece ADD timing**~~ (resolved: the server keeps per-player contributions, reported as absolute values; a piece is only double counted if two players collect the *same* one before the flag reaches the other, e.g. while the server is down): a piece collected while two players are offline from each other must not be
    double counted on reconnect. The server needs per-player "pieces reported" totals, not just a sum.
-4. **Bottles** (verify in v0.7.0 testing): confirm giving an empty bottle into the first free bottle slot is safe mid-game.
+4. ~~**Bottles**~~ (resolved: an empty bottle written into the first free bottle slot mid-game worked in v0.7.0 testing).
 5. **New co-op save**: start from a fresh file (everyone at the beginning) or from the host's existing save?
 
 ## Out of scope (Level A)

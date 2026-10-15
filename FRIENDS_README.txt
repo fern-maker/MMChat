@@ -30,17 +30,21 @@ CO-OP (shared progression)
   In the Mods menu, turn on "Co-op Save" and everyone uses the same
   "Co-op Save Name". File select then shows a separate co-op save (your
   normal saves are untouched); start a new file there. Items, masks, songs,
-  boss remains, the Gilded Sword and Mirror Shield, upgrades, heart
-  containers, Great Fairy rewards, owl statues and maps one player gets are
-  given to everyone in the group, and chests and rewards one player collects
-  are marked as collected for everyone. Rupees, ammo and what's in your
-  bottles stay your own, and everyone keeps their own clock. Shared progress
-  starts arriving once you've learned the Song of Time, so the opening plays
-  normally.
+  boss remains, the Gilded Sword and Mirror Shield, upgrades, Great Fairy
+  rewards, owl statues and maps one player gets are given to everyone in the
+  group. Heart pieces, heart containers and bottles add up: if you find a
+  piece and a friend finds a different one, you both get both. Chests and
+  rewards one player collects are marked as collected for everyone, so the
+  same one can't be taken twice. Rupees, ammo and what's in your bottles
+  stay your own (shared bottles arrive empty), and everyone keeps their own
+  clock. Shared progress starts arriving once you've learned the Song of
+  Time, so the opening plays normally.
   Not compatible with the "Ultimate 6 Save Slots" mod (disable it for co-op).
   The host's server keeps the group's progress in server/coop_state/.
 
   Everyone (and the server) needs the same MMChat release; mismatched
-  versions get a "version mismatch" error when connecting.
+  versions get a "version mismatch" error when connecting. Keep the server
+  running while you play: a heart piece two players both pick up while it's
+  down can be counted twice.
 
 Messages are not encrypted; chat with people you trust.

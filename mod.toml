@@ -3,7 +3,7 @@
 [manifest]
 
 id = "mm_chat"
-version = "0.6.0"
+version = "0.7.0"
 display_name = "MMChat"
 description = """
 Text chat with friends while you play. One player runs the MMChat server; everyone connects to it.
@@ -84,10 +84,10 @@ id = "coop_mode"
 name = "Co-op Save"
 description = """
 On: file select shows a separate co-op save file instead of your normal saves. Start a new file there; \
-items, masks, songs, boss remains, the Gilded Sword and Mirror Shield, upgrades, heart containers, Great \
-Fairy rewards, owl statues and maps are shared with everyone in your group who uses the same co-op save \
-name, and a chest or reward one player collects is marked collected for everyone. Shared progress \
-arrives once you've learned the Song of Time.
+items, masks, songs, boss remains, the Gilded Sword and Mirror Shield, upgrades, Great Fairy rewards, \
+owl statues and maps are shared with everyone in your group who uses the same co-op save name. Heart \
+pieces, heart containers and bottles add up across the group, and a chest or reward one player collects \
+is marked collected for everyone. Shared progress arrives once you've learned the Song of Time.
 
 Changes apply the next time you reach file select. Your normal saves are never modified."""
 type = "Enum"
