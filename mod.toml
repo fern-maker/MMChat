@@ -3,7 +3,7 @@
 [manifest]
 
 id = "mm_chat"
-version = "0.2.0"
+version = "0.3.0"
 display_name = "MMChat"
 description = """
 Text chat with friends while you play. One player runs the MMChat server; everyone connects to it.
@@ -20,7 +20,10 @@ minimum_recomp_version = "1.2.2"
 dependencies = [
 ]
 
+# Listed only so MMChat can detect them: they switch save files too, so co-op refuses to run alongside them.
 optional_dependencies = [
+    "mm_ultimate_6_save_slots",
+    "mm_ultimate_6_save_slots_cn"
 ]
 
 # The runtime loads mm_chat_native.dylib / .dll / .so from the mods folder, next to the .nrm.
@@ -68,3 +71,22 @@ name = "Server Password"
 description = "Only needed if the host started the server with a password."
 type = "String"
 default = ""
+
+[[manifest.config_options]]
+id = "coop_mode"
+name = "Co-op Save"
+description = """
+On: file select shows a separate co-op save file instead of your normal saves. Start a new file there; \
+progression will be shared with your group (coming in a later version).
+
+Changes apply the next time you reach file select. Your normal saves are never modified."""
+type = "Enum"
+options = [ "Off", "On" ]
+default = "Off"
+
+[[manifest.config_options]]
+id = "coop_save_name"
+name = "Co-op Save Name"
+description = "Name of the co-op save file (letters, numbers, - and _). Use a different name for each group you play with."
+type = "String"
+default = "coop"

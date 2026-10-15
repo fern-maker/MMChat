@@ -4,6 +4,7 @@
 #include "recompconfig.h"
 #include "recompui.h"
 #include "chat_native.h"
+#include "coop.h"
 
 #define DEFAULT_PORT 47474
 #define HISTORY_LINES 64
@@ -74,6 +75,7 @@ static const char* history_get(int age) {
 
 static RecompuiContext panel_context;
 static RecompuiResource status_label;
+static RecompuiResource coop_label;
 static RecompuiResource server_input;
 static RecompuiResource name_input;
 static RecompuiResource password_input;
@@ -265,6 +267,12 @@ static void set_panel_shown(bool shown) {
             recompui_hide_context(overlay_context);
             overlay_shown = false;
         }
+        // Co-op state only changes at file select, so refreshing it on open is enough.
+        char coop_text[96];
+        coop_describe(coop_text, sizeof(coop_text));
+        begin_panel_edit();
+        recompui_set_text(coop_label, coop_text);
+        end_panel_edit();
         recompui_show_context(panel_context);
     }
     else {
@@ -367,6 +375,7 @@ static void create_panel(void) {
     RecompuiResource title_row = create_row(panel);
     recompui_set_justify_content(title_row, JUSTIFY_CONTENT_SPACE_BETWEEN);
     recompui_create_label(panel_context, title_row, "MMChat", LABELSTYLE_LARGE);
+    coop_label = recompui_create_label(panel_context, title_row, "", LABELSTYLE_SMALL);
     status_label = recompui_create_label(panel_context, title_row, "Not connected", LABELSTYLE_NORMAL);
 
     RecompuiResource labels_row = create_row(panel);
