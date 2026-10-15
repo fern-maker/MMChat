@@ -91,6 +91,16 @@ dist: $(NRM) $(NATIVE_LIB) $(WINDOWS_LIB)
 	cd $(BUILD_DIR)/dist && zip -qr ../MMChat.zip MMChat
 	@echo "Created $(DIST_ZIP)"
 
+# End-to-end network tests (macOS / Linux): the real server, the native library driven through its
+# recomp exports by a small harness, and scripted players. Needs localhost port 47999.
+HARNESS := $(BUILD_DIR)/net_harness
+
+$(HARNESS): tests/net_harness.c | $(BUILD_DIR)
+	$(NATIVE_CC) -O1 -Wall -Wextra -o $@ $<
+
+test: $(NATIVE_LIB) $(HARNESS)
+	python3 -I tests/net_test.py server/mmchat_server.py $(HARNESS) $(NATIVE_LIB)
+
 $(NRM): $(TARGET) mod.toml
 	RecompModTool mod.toml $(BUILD_DIR)
 
@@ -108,4 +118,4 @@ endif
 
 -include $(ALL_DEPS)
 
-.PHONY: all package install clean windows dist
+.PHONY: all package install clean windows dist test
