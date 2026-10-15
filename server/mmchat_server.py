@@ -12,7 +12,8 @@ Protocol: UTF-8 text lines terminated by "\\n", fields separated by tabs.
     SAY <text>
     WHERE <scene id> <day>              scene -1 means title screen / menus
     COOP <group>                        join a co-op group ("" leaves); sent before any SYNC
-    SYNC <key> <value>                  report a shared progression value
+    SYNC <key> <value>                  report a shared progression value (ADD keys: this player's
+                                        whole contribution so far, not an increment)
     PING
   Server -> client
     WELCOME <assigned name>             name may get a numeric suffix if taken
@@ -22,11 +23,15 @@ Protocol: UTF-8 text lines terminated by "\\n", fields separated by tabs.
     ROSTER <n> [<name> <scene id> <day>] * n
                                         sent to everyone on join, leave and move
     SYNC <key> <merged value> <who>     group state: all of it after COOP, then each change
+    SYNC <key> <total> <who> <yours>    the same for ADD keys, with the receiver's own contribution
+    SYNCDONE <group>                    end of the group state sent after COOP
     PONG
 
-Co-op sync: keys are 32-bit numbers whose bits 12-15 give the merge rule (1 = OR, 2 = MAX), so the
-server merges values without knowing what they mean. Each group's merged state is saved to
-<state dir>/<group>.json, so progress survives server restarts. Delete that file to reset a group.
+Co-op sync: keys are 32-bit numbers whose bits 12-15 give the merge rule (1 = OR, 2 = MAX, 3 = ADD), so
+the server merges values without knowing what they mean. For ADD keys the server keeps each player's
+contribution and the value is their sum; contributions only grow, so a repeated report changes nothing.
+Each group's state is saved to <state dir>/<group>.json, so progress survives server restarts. Delete
+that file to reset a group.
 """
 
 import argparse
@@ -38,7 +43,7 @@ import re
 import socket
 import time
 
-PROTOCOL_VERSION = "3"
+PROTOCOL_VERSION = "4"
 DEFAULT_PORT = 47474
 MAX_LINE_BYTES = 512
 MAX_NAME_CHARS = 16
@@ -59,7 +64,10 @@ SYNC_LIMIT = 300
 SYNC_WINDOW_S = 3.0
 SYNC_OR = 1
 SYNC_MAX = 2
+SYNC_ADD = 3
 MAX_SYNC_KEYS = 256
+MAX_CONTRIBUTORS = 64  # per ADD key
+MAX_SYNC_VALUE = 0xFFFFFFFF
 MAX_GROUP_CHARS = 32
 DEFAULT_STATE_DIR = pathlib.Path(__file__).resolve().parent / "coop_state"
 
@@ -94,8 +102,13 @@ class RateLimiter:
         return True
 
 
-def sync_merge(key, a, b):
-    return a | b if (key >> 12) & 0xF == SYNC_OR else max(a, b)
+def sync_op(key):
+    return (key >> 12) & 0xF
+
+
+def contributor(name):
+    """Contributions are per player name, ignoring case, like the server's name uniqueness."""
+    return name.lower()
 
 
 class CoopGroup:
@@ -105,26 +118,51 @@ class CoopGroup:
         self.name = name
         self.path = state_dir / f"{name}.json"
         self.values = {}  # key -> [value, who]
+        self.contrib = {}  # ADD key -> {contributor: contribution}
         if self.path.exists():
             try:
                 data = json.loads(self.path.read_text(encoding="utf-8"))
                 self.values = {int(k): [int(v[0]), str(v[1])] for k, v in data["values"].items()}
-            except (OSError, ValueError, KeyError, TypeError, IndexError) as error:
+                # Files from before ADD keys existed have no "contrib".
+                self.contrib = {int(k): {str(n): int(c) for n, c in d.items()}
+                                for k, d in data.get("contrib", {}).items()}
+            except (OSError, ValueError, KeyError, TypeError, IndexError, AttributeError) as error:
                 raise RuntimeError(f"Could not read {self.path}: {error}") from error
+            # The contributions are the record; a total is always their sum.
+            for key, shares in self.contrib.items():
+                who = self.values.get(key, [0, ""])[1]
+                self.values[key] = [min(sum(shares.values()), MAX_SYNC_VALUE), who]
 
     def merge(self, key, value, who):
-        """Returns the new merged value if it changed, else None."""
+        """OR / MAX keys. Returns the new merged value if it changed, else None."""
         current = self.values.get(key, [0, ""])[0]
-        merged = sync_merge(key, current, value)
+        merged = current | value if sync_op(key) == SYNC_OR else max(current, value)
         if merged == current:
             return None
         self.values[key] = [merged, who]
         self.save()
         return merged
 
+    def contribute(self, key, value, who):
+        """ADD keys: `value` is who's whole contribution. Returns (new total, increase) if it grew, else None."""
+        shares = self.contrib.setdefault(key, {})
+        previous = shares.get(contributor(who), 0)
+        if value <= previous or (contributor(who) not in shares and len(shares) >= MAX_CONTRIBUTORS):
+            return None
+        shares[contributor(who)] = value
+        total = min(sum(shares.values()), MAX_SYNC_VALUE)
+        self.values[key] = [total, who]
+        self.save()
+        return total, value - previous
+
+    def share_of(self, key, who):
+        return self.contrib.get(key, {}).get(contributor(who), 0)
+
     def save(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         data = {"group": self.name, "values": {str(k): v for k, v in sorted(self.values.items())}}
+        if self.contrib:
+            data["contrib"] = {str(k): dict(sorted(v.items())) for k, v in sorted(self.contrib.items())}
         # Write then rename, so a crash mid-write can't leave a half-written file.
         temp = self.path.with_suffix(".json.tmp")
         temp.write_text(json.dumps(data, indent=1), encoding="utf-8")
@@ -178,10 +216,18 @@ class ChatServer:
             return
         # Bring the joiner up to date with everything the group has.
         for key, (value, who) in sorted(client.group.values.items()):
-            client.send("SYNC", str(key), str(value), who)
+            self.send_sync(client, key, value, who)
+        client.send("SYNCDONE", group_name)
         members = sum(1 for c in self.clients.values() if c.group is client.group)
         self.log(f"{client.name} joined co-op group '{group_name}' "
                  f"({members} in group, {len(client.group.values)} shared values so far)")
+
+    @staticmethod
+    def send_sync(client, key, value, who):
+        if sync_op(key) == SYNC_ADD:
+            client.send("SYNC", str(key), str(value), who, str(client.group.share_of(key, client.name)))
+        else:
+            client.send("SYNC", str(key), str(value), who)
 
     def handle_sync(self, client, key_text, value_text):
         if not client.sync_limiter.allow():
@@ -190,19 +236,26 @@ class ChatServer:
             client.send("INFO", "Not in a co-op group; progress wasn't shared (join one first)")
             return
         key = parse_int(key_text, 0, 0xFFFF)
-        value = parse_int(value_text, 0, 0xFFFFFFFF)
-        if key is None or value is None or (key >> 12) & 0xF not in (SYNC_OR, SYNC_MAX):
+        value = parse_int(value_text, 0, MAX_SYNC_VALUE)
+        if key is None or value is None or sync_op(key) not in (SYNC_OR, SYNC_MAX, SYNC_ADD):
             return
         group = client.group
         if key not in group.values and len(group.values) >= MAX_SYNC_KEYS:
             return
-        merged = group.merge(key, value, client.name)
-        if merged is None:
-            return
-        self.log(f"co-op '{group.name}': {client.name} added progress to key {key:#06x} (now {merged:#010x})")
+        if sync_op(key) == SYNC_ADD:
+            result = group.contribute(key, value, client.name)
+            if result is None:
+                return
+            merged, increase = result
+            self.log(f"co-op '{group.name}': {client.name} added {increase} to key {key:#06x} (total {merged})")
+        else:
+            merged = group.merge(key, value, client.name)
+            if merged is None:
+                return
+            self.log(f"co-op '{group.name}': {client.name} added progress to key {key:#06x} (now {merged:#010x})")
         for other in list(self.clients.values()):
             if other.group is group:
-                other.send("SYNC", str(key), str(merged), client.name)
+                self.send_sync(other, key, merged, client.name)
 
     def log(self, message):
         print(time.strftime("%H:%M:%S"), message, flush=True)

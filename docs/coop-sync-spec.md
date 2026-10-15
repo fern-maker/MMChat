@@ -39,13 +39,13 @@ Merge rules used below:
 |---|---|---|---|
 | Masks | `inventory.items[24..46]` (mask slots) | OR (present / not present) | **Implemented** (key `0x1001`). Fierce Deity (slot 47) is excluded: the game can delete it on reset, and sharing would hand it straight back |
 | Permanent items | `inventory.items[0..17]` except trade slots `SLOT_TRADE_DEED`, `SLOT_TRADE_KEY_MAMA`, `SLOT_TRADE_COUPLE` | OR (present / not present) | **Implemented** (key `0x1008`, bit = slot). Ocarina and magic beans also left out. Ammo stays local: a received bow / bomb bag comes full, a keg with 1, sticks / nuts / bombchus empty. An item Takkuri stole counts as owned |
-| Bottles | number of slots in `SLOT_BOTTLE_1..6` that hold anything, plus bottles Takkuri stole | ADD (count, max 6) | Planned for v0.7.0 (key `0x3002`). Changed from MAX, which undercounts when players get *different* bottles. A gained bottle is given to others **empty**. Contents are local |
+| Bottles | number of slots in `SLOT_BOTTLE_1..6` that hold anything, plus bottles Takkuri stole | ADD (count, max 6) | **Implemented** (key `0x3002`). Changed from MAX, which undercounts when players get *different* bottles. A gained bottle is given to others **empty**. Contents are local |
 | Songs, remains, notebook, quest bits | `inventory.questItems` bits 0x00–0x18 except `QUEST_PICTOGRAPH` (0x19) | OR | **Implemented** (key `0x1002`; Song of Time excluded, cursor/unused bits 0x04-0x05 and 0x13-0x17 excluded). Pictograph is cleared on reset; the heart-piece counter (0x1C+) has its own rule below |
 | Upgrades | `inventory.upgrades` (quiver, bomb bag, wallet, …) | MAX per upgrade field | **Implemented** (keys `0x2101`-`0x2103`: quiver, bomb bag, wallet). Wallet size is shared; rupees themselves stay local |
 | Gilded Sword | sword equip value | OR | **Implemented** (key `0x1009` bit 0). Put on the human form's B button whatever form you're in. A stolen Gilded Sword counts as owned. Razor Sword reverts on reset → local |
 | Mirror Shield | shield equip value | OR | **Implemented** (key `0x1009` bit 1). Hero's Shield can be eaten by Like Likes → local |
-| Heart containers | `playerData.healthCapacity` | MAX | **Implemented** (key `0x2104`). Until heart pieces are shared, MAX undercounts if players collect *different* pieces. v0.7.0 retires this key: containers and pieces become one ADD key |
-| Heart pieces | `questItems` heart-piece count (bits 0x1C+) | ADD | Planned for v0.7.0 (key `0x3001`, counted in quarter hearts: containers × 4 + pieces, from 12 to 80). Works only because the pickup locations and reward flags are also shared, so no piece is collected twice. 4 pieces roll into a container as usual |
+| Heart containers | `playerData.healthCapacity` | ADD | Part of the heart-pieces row below. Key `0x2104` (capacity, MAX, v0.5.0-v0.6.0) is retired: it undercounted when players collected *different* pieces |
+| Heart pieces | `questItems` heart-piece count (bits 0x1C+) | ADD | **Implemented** (key `0x3001`, counted in quarter hearts: containers × 4 + pieces, from 12 to 80). Works only because the pickup locations and reward flags are also shared, so no piece is collected twice. 4 pieces roll into a container as usual |
 | Magic, defense | `isMagicAcquired`, `isDoubleMagicAcquired`, `magicLevel`, `doubleDefense` | MAX | **Implemented** (key `0x1007`, applied like the Great Fairy: flag + meter fill target). Great Fairy rewards |
 | Owl statues | `playerData.owlActivationFlags` | OR | **Implemented** (key `0x1003`).  |
 | Maps, compasses | `inventory.dungeonItems[i]` map and compass bits | OR | **Implemented** (key `0x1004`). Boss key bit is cleared on reset → local |
@@ -99,9 +99,9 @@ persistent (rare for permanent rewards) would allow a second copy; those get fou
    allow-list — bombers' notebook entries plus flags that gate permanent item rewards — and grow it.
 2. **Rewards gated by flags we don't share**: if Bob receives an item but the giver's flag isn't shared,
    Bob may be offered it again. Usually the game substitutes rupees, which is harmless; confirm case by case.
-3. **Heart piece ADD timing**: a piece collected while two players are offline from each other must not be
+3. ~~**Heart piece ADD timing**~~ (resolved: the server keeps per-player contributions, reported as absolute values; a piece is only double counted if two players collect the *same* one before the flag reaches the other, e.g. while the server is down): a piece collected while two players are offline from each other must not be
    double counted on reconnect. The server needs per-player "pieces reported" totals, not just a sum.
-4. **Bottles**: confirm giving an empty bottle into the first free bottle slot is safe mid-game.
+4. **Bottles** (verify in v0.7.0 testing): confirm giving an empty bottle into the first free bottle slot is safe mid-game.
 5. **New co-op save**: start from a fresh file (everyone at the beginning) or from the host's existing save?
 
 ## Out of scope (Level A)

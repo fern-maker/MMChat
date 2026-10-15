@@ -7,7 +7,9 @@ Type a line and press Enter to send it. Commands:
   /where <scene> <day>  pretend to be in a scene (decimal id, -1 = menus), e.g. /where 111 1
   /coop <group>         join a co-op group (the co-op save name, e.g. coop)
   /sync <key> <value>   report shared progression; numbers may be hex, e.g. /sync 0x1001 0x100
-  /state                show the co-op values received so far
+                        (ADD keys 0x3xxx: the value is your whole contribution so far, so
+                        /sync 0x3001 1 then /sync 0x3001 2 gives two pieces of heart in total)
+  /state                show the co-op values received so far (ADD keys also show your share)
 Ctrl+C (or Ctrl+D) quits.
 
 Mask keys for /sync: key 0x1001, one bit per mask slot in this order (bit 0 first):
@@ -17,7 +19,8 @@ Mask keys for /sync: key 0x1001, one bit per mask slot in this order (bit 0 firs
 Other keys: 0x1002 quest bits (bit 6 Sonata, 7 Lullaby, 8 Bossa Nova, 9 Elegy, 10 Oath, 13 Healing,
   14 Epona, 15 Soaring, 16 Storms, 18 Notebook; 0-3 boss remains), 0x1003 owl statues, 0x1004 dungeon
   maps/compasses, 0x1007 abilities (1 magic, 2 double magic, 4 double defense), 0x2101 quiver level (1-3),
-  0x2102 bomb bag level (1-3), 0x2103 wallet level (1-2), 0x2104 heart capacity (16 per heart, e.g. 0x50 = 5)
+  0x2102 bomb bag level (1-3), 0x2103 wallet level (1-2), 0x2104 heart capacity (retired in v0.7.0)
+  0x3001 quarter hearts gained (ADD; 4 = one heart container), 0x3002 bottles gained (ADD)
   0x1008 items, one bit per inventory slot (bit 1 Bow, 2 Fire Arrow, 3 Ice Arrow, 4 Light Arrow, 6 Bomb Bag,
   7 Bombchus, 8 Deku Sticks, 9 Deku Nuts, 12 Powder Keg, 13 Pictograph Box, 14 Lens of Truth, 15 Hookshot,
   16 Great Fairy's Sword; e.g. the Hookshot is /sync 0x1008 0x8000), 0x1009 equipment (1 Gilded Sword,
@@ -31,13 +34,14 @@ import socket
 import sys
 import threading
 
-PROTOCOL_VERSION = "3"
+PROTOCOL_VERSION = "4"
 MASK_KEY = 0x1001
 MASK_NAMES = ["Postman's Hat", "All-Night", "Blast", "Stone", "Great Fairy's", "Deku", "Keaton", "Bremen",
               "Bunny Hood", "Don Gero's", "Scents", "Goron", "Romani's", "Circus Leader's", "Kafei's",
               "Couple's", "Truth", "Zora", "Kamaro's", "Gibdo", "Garo's", "Captain's Hat", "Giant's"]
 roster = []
 sync_state = {}
+sync_mine = {}  # ADD keys: our own contribution
 group = None
 
 
@@ -51,11 +55,11 @@ ITEM_NAMES = {1: "Bow", 2: "Fire Arrow", 3: "Ice Arrow", 4: "Light Arrow", 6: "B
               15: "Hookshot", 16: "Great Fairy's Sword"}
 EQUIPMENT_NAMES = {0: "Gilded Sword", 1: "Mirror Shield"}
 SCENE_FIELDS = ["switch0", "switch1", "chest", "collectible"]
-# Keys from src/coop_sync.c. Bits 12-15 are the merge rule (1 = OR, 2 = MAX).
+# Keys from src/coop_sync.c. Bits 12-15 are the merge rule (1 = OR, 2 = MAX, 3 = ADD).
 KEY_LABELS = {0x1001: "masks", 0x1002: "quest", 0x1003: "owl statues (bits)", 0x1004: "dungeon maps/compasses (bits)",
               0x1005: "regions visited (bits)", 0x1006: "map clouds (bits)", 0x1007: "abilities",
               0x2101: "quiver level", 0x2102: "bomb bag level", 0x2103: "wallet level",
-              0x2104: "heart capacity (16 per heart)"}
+              0x2104: "heart capacity (retired)", 0x3001: "quarter hearts gained", 0x3002: "bottles gained"}
 for i in range(7):
     KEY_LABELS[0x1010 + i] = f"Tingle map scenes {i} (bits)"
 
@@ -78,6 +82,8 @@ def describe(key, value):
     if 0x1200 <= key <= 0x13C3:
         scene, field = divmod(key - 0x1200, 4)
         return f"scene {scene:#04x} {SCENE_FIELDS[field]} flags = {value:#010x}"
+    if key in (0x3001, 0x3002):
+        return f"{KEY_LABELS[key]} = {value} in total, {sync_mine.get(key, 0)} of them yours"
     if key in KEY_LABELS:
         return f"{KEY_LABELS[key]} = {value:#x}"
     return f"key {key:#06x} = {value:#010x}"
@@ -95,6 +101,7 @@ def join_group(sock, name):
     global group
     group = name
     sync_state.clear()
+    sync_mine.clear()
     sock.sendall(f"COOP\t{name}\n".encode("utf-8"))
     print(f"* joined co-op group '{name}'; its current state:", flush=True)
     threading.Timer(0.5, print_state).start()
@@ -128,10 +135,14 @@ def receive(sock):
             elif fields[0] == "ROSTER" and len(fields) >= 2:
                 rest = fields[2:]
                 roster = [tuple(rest[i:i + 3]) for i in range(0, len(rest) - 2, 3)]
-            elif fields[0] == "SYNC" and len(fields) == 4:
+            elif fields[0] == "SYNC" and len(fields) in (4, 5):
                 key, value = int(fields[1]), int(fields[2])
                 sync_state[key] = value
+                if len(fields) == 5:
+                    sync_mine[key] = int(fields[4])
                 print(f"* sync: {describe(key, value)} (last change by {fields[3] or '?'})", flush=True)
+            elif fields[0] == "SYNCDONE":
+                pass  # End of the group's state; print_state shows it.
 
 
 def main():

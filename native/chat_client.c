@@ -85,15 +85,20 @@ static int my_day;
 static int location_dirty;
 
 // Co-op sync cache: the group's merged values, plus which ones the server hasn't seen from us yet.
+// For ADD keys `value` is the total the server last sent, `mine` our contribution as the server counted
+// it then, and `reported` the latest contribution we reported (maybe not yet counted).
 typedef struct {
     uint32_t key;
     uint32_t value;
+    uint32_t mine;
+    uint32_t reported;
     int unsent;
     char who[64];
 } SyncEntry;
 
 static char coop_group[40];
 static int group_dirty; // Server needs COOP (and our whole cache) before any SYNC.
+static int sync_ready;  // The server has sent the group's whole state on this connection.
 static SyncEntry sync_entries[MMCHAT_SYNC_SLOTS];
 static int sync_count;
 static uint32_t sync_version;
@@ -165,12 +170,29 @@ static void set_error(const char* message) {
     copy_string(last_error, sizeof(last_error), message);
     push_incoming_locked(line);
     clear_roster_locked();
+    sync_ready = 0;
     UNLOCK();
 }
 
 static int valid_sync_op(uint32_t key) {
     uint32_t op = MMCHAT_SYNC_OP(key);
-    return op == MMCHAT_SYNC_OR || op == MMCHAT_SYNC_MAX;
+    return op == MMCHAT_SYNC_OR || op == MMCHAT_SYNC_MAX || op == MMCHAT_SYNC_ADD;
+}
+
+static uint32_t max_u32(uint32_t a, uint32_t b) {
+    return a > b ? a : b;
+}
+
+// ADD keys: our contribution, counting a report the server may not have confirmed yet.
+static uint32_t add_mine(const SyncEntry* entry) {
+    return max_u32(entry->mine, entry->reported);
+}
+
+// ADD keys: the server's total with our counted share swapped for our latest one.
+static uint32_t add_total(const SyncEntry* entry) {
+    uint32_t others = entry->value >= entry->mine ? entry->value - entry->mine : 0;
+    uint32_t mine = add_mine(entry);
+    return others > UINT32_MAX - mine ? UINT32_MAX : others + mine;
 }
 
 static uint32_t sync_merge(uint32_t key, uint32_t a, uint32_t b) {
@@ -341,13 +363,15 @@ static int handle_server_line(char* line) {
         push_incoming_locked(display);
         location_dirty = 1; // A fresh session doesn't know where we are yet.
         group_dirty = coop_group[0] != '\0'; // ...or which co-op group we're in.
+        sync_ready = 0;
         UNLOCK();
     }
     else if (strcmp(fields[0], "SYNC") == 0 && count == 4) {
         // SYNC <key> <merged value> <who changed it>
         uint32_t key;
         uint32_t value;
-        if (!parse_u32(fields[1], &key) || !parse_u32(fields[2], &value) || !valid_sync_op(key)) {
+        if (!parse_u32(fields[1], &key) || !parse_u32(fields[2], &value) || !valid_sync_op(key) ||
+            MMCHAT_SYNC_OP(key) == MMCHAT_SYNC_ADD) {
             return 1;
         }
         LOCK();
@@ -359,6 +383,36 @@ static int handle_server_line(char* line) {
                 copy_string(entry->who, sizeof(entry->who), fields[3]);
                 sync_version++;
             }
+        }
+        UNLOCK();
+    }
+    else if (strcmp(fields[0], "SYNC") == 0 && count == 5) {
+        // SYNC <ADD key> <total> <who changed it> <our contribution>. The server's total is the truth.
+        uint32_t key;
+        uint32_t total;
+        uint32_t mine;
+        if (!parse_u32(fields[1], &key) || !parse_u32(fields[2], &total) || !parse_u32(fields[4], &mine) ||
+            MMCHAT_SYNC_OP(key) != MMCHAT_SYNC_ADD) {
+            return 1;
+        }
+        LOCK();
+        SyncEntry* entry = sync_find_locked(key, 1);
+        if (entry != NULL) {
+            uint32_t before = add_total(entry);
+            entry->value = total;
+            entry->mine = mine;
+            if (add_total(entry) != before) {
+                copy_string(entry->who, sizeof(entry->who), fields[3]);
+                sync_version++;
+            }
+        }
+        UNLOCK();
+    }
+    else if (strcmp(fields[0], "SYNCDONE") == 0 && count == 2) {
+        // Ignore the end of a group we've since left; its replacement's state is still on the way.
+        LOCK();
+        if (strcmp(fields[1], coop_group) == 0) {
+            sync_ready = 1;
         }
         UNLOCK();
     }
@@ -478,11 +532,18 @@ static void run_connection(void) {
             }
             if (coop_group[0] != '\0') {
                 for (int i = 0; i < sync_count; i++) {
-                    if (sync_entries[i].unsent) {
-                        snprintf(sync_lines[sync_line_count++], sizeof(sync_lines[0]), "SYNC\t%u\t%u\n",
-                                 (unsigned)sync_entries[i].key, (unsigned)sync_entries[i].value);
-                        sync_entries[i].unsent = 0;
+                    SyncEntry* entry = &sync_entries[i];
+                    if (!entry->unsent) {
+                        continue;
                     }
+                    entry->unsent = 0;
+                    // ADD keys send our own contribution, never the group total.
+                    uint32_t value = MMCHAT_SYNC_OP(entry->key) == MMCHAT_SYNC_ADD ? entry->reported : entry->value;
+                    if (MMCHAT_SYNC_OP(entry->key) == MMCHAT_SYNC_ADD && value == 0) {
+                        continue; // Nothing of ours to count.
+                    }
+                    snprintf(sync_lines[sync_line_count++], sizeof(sync_lines[0]), "SYNC\t%u\t%u\n",
+                             (unsigned)entry->key, (unsigned)value);
                 }
             }
         }
@@ -518,6 +579,7 @@ static void finish_connection(void) {
         status = MMCHAT_DISCONNECTED;
     }
     clear_roster_locked();
+    sync_ready = 0;
     UNLOCK();
 }
 
@@ -571,6 +633,7 @@ void mmchat_disconnect(void) {
     LOCK();
     status = MMCHAT_DISCONNECTED;
     clear_roster_locked();
+    sync_ready = 0;
     UNLOCK();
 }
 
@@ -670,6 +733,7 @@ void mmchat_coop_set_group(const char* group) {
         sync_count = 0;
         sync_version++;
         group_dirty = 1;
+        sync_ready = 0;
     }
     UNLOCK();
 }
@@ -681,12 +745,30 @@ uint32_t mmchat_sync_version(void) {
     return version;
 }
 
+int mmchat_sync_ready(void) {
+    LOCK();
+    int ready = sync_ready && status == MMCHAT_CONNECTED;
+    UNLOCK();
+    return ready;
+}
+
 uint32_t mmchat_sync_get(uint32_t key) {
     LOCK();
     SyncEntry* entry = sync_find_locked(key, 0);
-    uint32_t value = entry != NULL ? entry->value : 0;
+    uint32_t value = 0;
+    if (entry != NULL) {
+        value = MMCHAT_SYNC_OP(key) == MMCHAT_SYNC_ADD ? add_total(entry) : entry->value;
+    }
     UNLOCK();
     return value;
+}
+
+uint32_t mmchat_sync_get_mine(uint32_t key) {
+    LOCK();
+    SyncEntry* entry = sync_find_locked(key, 0);
+    uint32_t mine = entry != NULL && MMCHAT_SYNC_OP(key) == MMCHAT_SYNC_ADD ? add_mine(entry) : 0;
+    UNLOCK();
+    return mine;
 }
 
 size_t mmchat_sync_get_who(uint32_t key, char* out, size_t out_len) {
@@ -705,7 +787,16 @@ int mmchat_sync_report(uint32_t key, uint32_t value) {
     LOCK();
     if (coop_group[0] != '\0') {
         SyncEntry* entry = sync_find_locked(key, 1);
-        if (entry != NULL) {
+        if (entry != NULL && MMCHAT_SYNC_OP(key) == MMCHAT_SYNC_ADD) {
+            if (value > add_mine(entry)) {
+                entry->reported = value;
+                entry->unsent = 1;
+                copy_string(entry->who, sizeof(entry->who), assigned_name);
+                sync_version++;
+                changed = 1;
+            }
+        }
+        else if (entry != NULL) {
             uint32_t merged = sync_merge(key, entry->value, value);
             if (merged != entry->value) {
                 entry->value = merged;

@@ -13,7 +13,8 @@
 // Merge rules only ever add progression, so this can't take anything away.
 //
 // Each shared value is a row in `categories` below: a key, how to read it from the save, and how to
-// write a merged value back. A row's `param` lets one read/apply pair serve several rows.
+// write a merged value back. A row's `param` lets one read/apply pair serve several rows. Counters
+// (heart pieces, bottles) are rows in `add_categories` instead; see sync_add_category.
 
 #define SAVE_INFO (gSaveContext.save.saveInfo)
 
@@ -34,7 +35,9 @@
 #define KEY_QUIVER SYNC_KEY(SYNC_OP_MAX, 0x101)
 #define KEY_BOMB_BAG SYNC_KEY(SYNC_OP_MAX, 0x102)
 #define KEY_WALLET SYNC_KEY(SYNC_OP_MAX, 0x103)
-#define KEY_HEART_CAPACITY SYNC_KEY(SYNC_OP_MAX, 0x104)
+// 0x2104 (heart capacity, MAX) was retired in v0.7.0 in favour of KEY_HEART_QUARTERS; never reuse it.
+#define KEY_HEART_QUARTERS SYNC_KEY(SYNC_OP_ADD, 0x001)
+#define KEY_BOTTLES SYNC_KEY(SYNC_OP_ADD, 0x002)
 
 // ---- Masks ----
 
@@ -228,7 +231,7 @@ static void apply_abilities(PlayState* play, u32 missing, u32 param) {
     }
 }
 
-// ---- Upgrades and heart containers (MAX) ----
+// ---- Upgrades (MAX) ----
 
 static u32 read_quiver(PlayState* play, u32 param) {
     return GET_CUR_UPG_VALUE(UPG_QUIVER);
@@ -252,17 +255,6 @@ static u32 read_wallet(PlayState* play, u32 param) {
 
 static void apply_wallet(PlayState* play, u32 value, u32 param) {
     Inventory_ChangeUpgrade(UPG_WALLET, value);
-}
-
-static u32 read_heart_capacity(PlayState* play, u32 param) {
-    return (u32)SAVE_INFO.playerData.healthCapacity;
-}
-
-// Like a heart container: raise the maximum and fill the new hearts.
-static void apply_heart_capacity(PlayState* play, u32 value, u32 param) {
-    s16 gained = (s16)value - SAVE_INFO.playerData.healthCapacity;
-    SAVE_INFO.playerData.healthCapacity = (s16)value;
-    SAVE_INFO.playerData.health += gained;
 }
 
 // ---- Permanent items ----
@@ -615,8 +607,6 @@ static const SyncCategory fixed_categories[] = {
     { KEY_QUIVER, 0, 3, read_quiver, apply_quiver, NULL, "a bigger quiver", 0 },
     { KEY_BOMB_BAG, 0, 3, read_bomb_bag, apply_bomb_bag, NULL, "a bigger bomb bag", 0 },
     { KEY_WALLET, 0, 2, read_wallet, apply_wallet, NULL, "a bigger wallet", 0 },
-    { KEY_HEART_CAPACITY, 0, 20 * 0x10, read_heart_capacity, apply_heart_capacity, NULL, "a heart container",
-      0 },
     // After the upgrades, so a received bow or bomb bag is filled to the group's capacity.
     { KEY_ITEMS, SHARED_ITEM_BITS, 0, read_items, apply_items, item_names, "an item", 0 },
     { KEY_EQUIPMENT, EQUIP_GILDED_SWORD | EQUIP_MIRROR_SHIELD, 0, read_equipment, apply_equipment, equipment_names,
@@ -721,6 +711,119 @@ static void flush_notices(void) {
     frame_notice_count = 0;
 }
 
+// ---- Counters (ADD): heart pieces and bottles ----
+
+// Different players collect different heart pieces and bottles, so the group's count is the sum of
+// everyone's gains: the server keeps each player's contribution. Each frame we compare what we have with
+// the starting amount plus the group's total. Having more means we gained something ourselves (our
+// contribution grows by the difference); having less means others did (we're given the difference).
+// That needs no extra save data, counts progress made offline once we reconnect, and catches up a
+// reloaded older save. Rewards can't be collected twice because the scene and reward flags are shared.
+
+typedef struct {
+    u32 key;
+    u32 base; // What a new save starts with.
+    u32 cap;  // The most the game allows.
+    u32 (*read)(PlayState* play);
+    void (*apply)(PlayState* play, u32 gain);
+    const char* one;  // Notice for a gain of 1.
+    const char* many; // Notice for a larger gain, after the number.
+} AddCategory;
+
+// Quarter hearts: 4 per heart container plus the heart pieces towards the next one. Unlike the piece
+// count, this doesn't change when 4 pieces turn into a container.
+#define START_HEART_QUARTERS (3 * 4)
+#define MAX_HEART_QUARTERS (20 * 4)
+
+static u32 read_heart_quarters(PlayState* play) {
+    return (u32)SAVE_INFO.playerData.healthCapacity / 0x10 * 4 + GET_QUEST_HEART_PIECE_COUNT;
+}
+
+// One piece at a time, the way Item_Give does it: every fourth becomes a container and fills a heart.
+static void apply_heart_quarters(PlayState* play, u32 gain) {
+    for (u32 i = 0; i < gain && SAVE_INFO.playerData.healthCapacity < MAX_HEART_QUARTERS / 4 * 0x10; i++) {
+        INCREMENT_QUEST_HEART_PIECE_COUNT;
+        if (EQ_MAX_QUEST_HEART_PIECE_COUNT) {
+            RESET_HEART_PIECE_COUNT;
+            SAVE_INFO.playerData.healthCapacity += 0x10;
+            SAVE_INFO.playerData.health += 0x10;
+        }
+    }
+}
+
+// Bottles Takkuri stole count: the Song of Time gives them back.
+static u32 read_bottles(PlayState* play) {
+    u32 count = (STOLEN_ITEM_1 == ITEM_BOTTLE) + (STOLEN_ITEM_2 == ITEM_BOTTLE);
+    for (int slot = SLOT_BOTTLE_1; slot <= SLOT_BOTTLE_6; slot++) {
+        if (SAVE_INFO.inventory.items[slot] != ITEM_NONE) {
+            count++;
+        }
+    }
+    return count;
+}
+
+// Received bottles are empty: what's in a bottle stays per player.
+static void apply_bottles(PlayState* play, u32 gain) {
+    for (int slot = SLOT_BOTTLE_1; slot <= SLOT_BOTTLE_6 && gain > 0; slot++) {
+        if (SAVE_INFO.inventory.items[slot] == ITEM_NONE) {
+            SAVE_INFO.inventory.items[slot] = ITEM_BOTTLE;
+            gain--;
+        }
+    }
+}
+
+static const AddCategory add_categories[] = {
+    { KEY_HEART_QUARTERS, START_HEART_QUARTERS, MAX_HEART_QUARTERS, read_heart_quarters, apply_heart_quarters,
+      "a Piece of Heart", " Pieces of Heart" },
+    { KEY_BOTTLES, 0, 6, read_bottles, apply_bottles, "an empty bottle", " empty bottles" },
+};
+
+static void format_count(char* out, u32 out_len, u32 count, const char* suffix) {
+    char digits[12];
+    int n = 0;
+    do {
+        digits[n++] = '0' + count % 10;
+        count /= 10;
+    } while (count != 0);
+    u32 i = 0;
+    while (n > 0 && i + 1 < out_len) {
+        out[i++] = digits[--n];
+    }
+    out[i] = '\0';
+    append_text(out, out_len, suffix);
+}
+
+static void sync_add_category(PlayState* play, const AddCategory* cat, bool can_receive) {
+    // Until the group's state has arrived the total is incomplete, and all our own progress would look
+    // like a new gain.
+    if (!chat_sync_ready()) {
+        return;
+    }
+    u32 local = cat->read(play);
+    u32 total = chat_sync_get(cat->key);
+    u32 expected = total > cat->cap - cat->base ? cat->cap : cat->base + total;
+
+    if (local > expected) {
+        // Our whole contribution, not the increase, so a resend can't count twice.
+        chat_sync_report(cat->key, chat_sync_get_mine(cat->key) + (local - expected));
+    }
+    else if (local < expected && can_receive) {
+        u32 gain = expected - local;
+        cat->apply(play, gain);
+        if (gain == 1) {
+            queue_notice(cat->key, cat->one);
+        }
+        else if (cat->key == KEY_HEART_QUARTERS && gain == 4) {
+            queue_notice(cat->key, "a Heart Container");
+        }
+        else {
+            char text[48];
+            format_count(text, sizeof(text), gain, cat->many);
+            queue_notice(cat->key, text);
+        }
+    }
+}
+
 // ---- Sync loop ----
 
 static void sync_category(PlayState* play, const SyncCategory* cat, bool can_receive) {
@@ -787,6 +890,9 @@ void coop_sync_update(PlayState* play) {
     }
     for (u32 i = 0; i < category_count; i++) {
         sync_category(play, &categories[i], can_receive);
+    }
+    for (u32 i = 0; i < ARRAY_COUNT(add_categories); i++) {
+        sync_add_category(play, &add_categories[i], can_receive);
     }
     flush_notices();
 }

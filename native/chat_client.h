@@ -9,7 +9,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define MMCHAT_PROTOCOL_VERSION "3"
+#define MMCHAT_PROTOCOL_VERSION "4"
 #define MMCHAT_MAX_LINE 512
 #define MMCHAT_MAX_PLAYERS 16
 #define MMCHAT_SCENE_NONE (-1) // Title screen, file select, credits.
@@ -56,19 +56,27 @@ int mmchat_roster_get(int index, char* out, size_t out_len);
 #define MMCHAT_SYNC_OP(key) (((key) >> 12) & 0xF)
 #define MMCHAT_SYNC_OR 1  // Bit sets: a bit set by anyone is set for everyone.
 #define MMCHAT_SYNC_MAX 2 // Levels: everyone gets the highest value.
+#define MMCHAT_SYNC_ADD 3 // Counters: the server sums each player's contribution.
 #define MMCHAT_SYNC_SLOTS 256
 
 // Joins a co-op group (the co-op save name), or leaves with "". Changing groups clears the cached state.
 // Cheap to call every frame.
 void mmchat_coop_set_group(const char* group);
 
+// 1 once the server has sent this group's whole state on the current connection; 0 while
+// disconnected or just after joining. ADD keys need it: until then their totals are incomplete.
+int mmchat_sync_ready(void);
 // Increments whenever any merged value changes.
 uint32_t mmchat_sync_version(void);
-// The group's merged value for `key` (0 if nothing is known yet).
+// The group's merged value for `key` (0 if nothing is known yet). For ADD keys, the total including
+// our own latest contribution even before the server has confirmed it.
 uint32_t mmchat_sync_get(uint32_t key);
+// ADD keys: our own contribution to the total (0 for other keys).
+uint32_t mmchat_sync_get_mine(uint32_t key);
 // Name of the player whose update last changed `key`. Returns its length.
 size_t mmchat_sync_get_who(uint32_t key, char* out, size_t out_len);
-// Merges a local value into the cache and sends it if that changed anything.
+// Merges a local value into the cache and sends it if that changed anything. For ADD keys `value` is
+// our whole contribution so far (not an increment), so resending it can't count twice.
 // Works offline too: unsent changes go out after (re)connecting. Returns 1 if the cache changed.
 int mmchat_sync_report(uint32_t key, uint32_t value);
 

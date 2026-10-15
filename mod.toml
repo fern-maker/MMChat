@@ -45,7 +45,9 @@ native_libraries = [
         "chat_sync_version",
         "chat_sync_get",
         "chat_sync_get_who",
-        "chat_sync_report"
+        "chat_sync_report",
+        "chat_sync_get_mine",
+        "chat_sync_ready"
     ] }
 ]
 

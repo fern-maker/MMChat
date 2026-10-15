@@ -197,6 +197,18 @@ EXPORT void chat_sync_get(uint8_t* rdram, recomp_context* ctx) {
     return_s32(ctx, (int32_t)mmchat_sync_get((uint32_t)ctx->r4));
 }
 
+// u32 chat_sync_get_mine(u32 key)
+EXPORT void chat_sync_get_mine(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram;
+    return_s32(ctx, (int32_t)mmchat_sync_get_mine((uint32_t)ctx->r4));
+}
+
+// s32 chat_sync_ready(void)
+EXPORT void chat_sync_ready(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram;
+    return_s32(ctx, mmchat_sync_ready());
+}
+
 // s32 chat_sync_get_who(u32 key, char* out, u32 out_len)
 EXPORT void chat_sync_get_who(uint8_t* rdram, recomp_context* ctx) {
     char who[64];
