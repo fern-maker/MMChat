@@ -38,12 +38,12 @@ Merge rules used below:
 | Category | Field(s) | Rule | Notes |
 |---|---|---|---|
 | Masks | `inventory.items[24..46]` (mask slots) | OR (present / not present) | **Implemented** (key `0x1001`). Fierce Deity (slot 47) is excluded: the game can delete it on reset, and sharing would hand it straight back |
-| Permanent items | `inventory.items[0..17]` except trade slots `SLOT_TRADE_DEED`, `SLOT_TRADE_KEY_MAMA`, `SLOT_TRADE_COUPLE` | OR (present / not present) | Bow, bombs, hookshot, lens, powder keg, pictograph box, Great Fairy sword… Ammo counts stay local |
+| Permanent items | `inventory.items[0..17]` except trade slots `SLOT_TRADE_DEED`, `SLOT_TRADE_KEY_MAMA`, `SLOT_TRADE_COUPLE` | OR (present / not present) | **Implemented** (key `0x1008`, bit = slot). Ocarina and magic beans also left out. Ammo stays local: a received bow / bomb bag comes full, a keg with 1, sticks / nuts / bombchus empty. An item Takkuri stole counts as owned |
 | Bottles | number of slots in `SLOT_BOTTLE_1..6` that hold anything | MAX (count) | A gained bottle is given to others **empty**. Contents are local |
 | Songs, remains, notebook, quest bits | `inventory.questItems` bits 0x00–0x18 except `QUEST_PICTOGRAPH` (0x19) | OR | **Implemented** (key `0x1002`; Song of Time excluded, cursor/unused bits 0x04-0x05 and 0x13-0x17 excluded). Pictograph is cleared on reset; the heart-piece counter (0x1C+) has its own rule below |
 | Upgrades | `inventory.upgrades` (quiver, bomb bag, wallet, …) | MAX per upgrade field | **Implemented** (keys `0x2101`-`0x2103`: quiver, bomb bag, wallet). Wallet size is shared; rupees themselves stay local |
-| Gilded Sword | sword equip value | MAX, only at `EQUIP_VALUE_SWORD_GILDED` | Razor Sword reverts on reset → local |
-| Mirror Shield | shield equip value | MAX, only at `EQUIP_VALUE_SHIELD_MIRROR` | Hero's Shield can be eaten by Like Likes → local |
+| Gilded Sword | sword equip value | OR | **Implemented** (key `0x1009` bit 0). Put on the human form's B button whatever form you're in. A stolen Gilded Sword counts as owned. Razor Sword reverts on reset → local |
+| Mirror Shield | shield equip value | OR | **Implemented** (key `0x1009` bit 1). Hero's Shield can be eaten by Like Likes → local |
 | Heart containers | `playerData.healthCapacity` | MAX | **Implemented** (key `0x2104`). Until heart pieces are shared, MAX undercounts if players collect *different* pieces.  |
 | Heart pieces | `questItems` heart-piece count (bits 0x1C+) | ADD | Works only because the pickup locations are also shared (below), so no piece is collected twice. 4 pieces roll into a container as usual |
 | Magic, defense | `isMagicAcquired`, `isDoubleMagicAcquired`, `magicLevel`, `doubleDefense` | MAX | **Implemented** (key `0x1007`, applied like the Great Fairy: flag + meter fill target). Great Fairy rewards |

@@ -26,6 +26,8 @@
 #define KEY_REGIONS SYNC_KEY(SYNC_OP_OR, 0x005)
 #define KEY_CLOUDS SYNC_KEY(SYNC_OP_OR, 0x006)
 #define KEY_ABILITIES SYNC_KEY(SYNC_OP_OR, 0x007)
+#define KEY_ITEMS SYNC_KEY(SYNC_OP_OR, 0x008)
+#define KEY_EQUIPMENT SYNC_KEY(SYNC_OP_OR, 0x009)
 #define KEY_SCENES_VISIBLE(i) SYNC_KEY(SYNC_OP_OR, 0x010 + (i)) // 0x010-0x016
 #define KEY_QUIVER SYNC_KEY(SYNC_OP_MAX, 0x101)
 #define KEY_BOMB_BAG SYNC_KEY(SYNC_OP_MAX, 0x102)
@@ -261,6 +263,127 @@ static void apply_heart_capacity(PlayState* play, u32 value, u32 param) {
     SAVE_INFO.playerData.health += gained;
 }
 
+// ---- Permanent items ----
+
+// Bit i is inventory slot i; in these slots the item id equals the slot number. Left out: the Ocarina
+// (everyone has it before receiving starts), magic beans (consumable), and the trade slots (cleared
+// every cycle). Ammo stays per player: a received bow or bomb bag comes full, as when first found, and
+// sticks, nuts and bombchus come empty, as after a Song of Time.
+#define ITEM_BIT(slot) (1u << (slot))
+#define SHARED_ITEM_BITS                                                                                    \
+    (ITEM_BIT(SLOT_BOW) | ITEM_BIT(SLOT_ARROW_FIRE) | ITEM_BIT(SLOT_ARROW_ICE) | ITEM_BIT(SLOT_ARROW_LIGHT) | \
+     ITEM_BIT(SLOT_BOMB) | ITEM_BIT(SLOT_BOMBCHU) | ITEM_BIT(SLOT_DEKU_STICK) | ITEM_BIT(SLOT_DEKU_NUT) |    \
+     ITEM_BIT(SLOT_POWDER_KEG) | ITEM_BIT(SLOT_PICTOGRAPH_BOX) | ITEM_BIT(SLOT_LENS_OF_TRUTH) |             \
+     ITEM_BIT(SLOT_HOOKSHOT) | ITEM_BIT(SLOT_SWORD_GREAT_FAIRY))
+
+static const char* const item_names[32] = {
+    [SLOT_BOW] = "the Hero's Bow",
+    [SLOT_ARROW_FIRE] = "the Fire Arrow",
+    [SLOT_ARROW_ICE] = "the Ice Arrow",
+    [SLOT_ARROW_LIGHT] = "the Light Arrow",
+    [SLOT_BOMB] = "the Bomb Bag",
+    [SLOT_BOMBCHU] = "Bombchus",
+    [SLOT_DEKU_STICK] = "Deku Sticks",
+    [SLOT_DEKU_NUT] = "Deku Nuts",
+    [SLOT_POWDER_KEG] = "the Powder Keg",
+    [SLOT_PICTOGRAPH_BOX] = "the Pictograph Box",
+    [SLOT_LENS_OF_TRUTH] = "the Lens of Truth",
+    [SLOT_HOOKSHOT] = "the Hookshot",
+    [SLOT_SWORD_GREAT_FAIRY] = "the Great Fairy's Sword",
+};
+
+// Takkuri can steal some items; the game hands them back on the next Song of Time, so a stolen item
+// still counts as owned (otherwise the group would give a second copy).
+static bool is_stolen(u8 item) {
+    return STOLEN_ITEM_1 == item || STOLEN_ITEM_2 == item;
+}
+
+static u32 read_items(u32 param) {
+    u32 bits = 0;
+    for (int slot = 0; slot < 32; slot++) {
+        if ((SHARED_ITEM_BITS & ITEM_BIT(slot)) && SAVE_INFO.inventory.items[slot] != ITEM_NONE) {
+            bits |= ITEM_BIT(slot);
+        }
+    }
+    if (is_stolen(ITEM_SWORD_GREAT_FAIRY)) {
+        bits |= ITEM_BIT(SLOT_SWORD_GREAT_FAIRY);
+    }
+    return bits;
+}
+
+static void apply_items(PlayState* play, u32 missing, u32 param) {
+    for (int slot = 0; slot < 32; slot++) {
+        if (!(missing & ITEM_BIT(slot))) {
+            continue;
+        }
+        SAVE_INFO.inventory.items[slot] = slot;
+        if (slot == SLOT_BOW) {
+            if (CUR_UPG_VALUE(UPG_QUIVER) == 0) {
+                Inventory_ChangeUpgrade(UPG_QUIVER, 1);
+            }
+            AMMO(ITEM_BOW) = CUR_CAPACITY(UPG_QUIVER);
+        }
+        else if (slot == SLOT_BOMB) {
+            if (CUR_UPG_VALUE(UPG_BOMB_BAG) == 0) {
+                Inventory_ChangeUpgrade(UPG_BOMB_BAG, 1);
+            }
+            AMMO(ITEM_BOMB) = CUR_CAPACITY(UPG_BOMB_BAG);
+        }
+        else if (slot == SLOT_POWDER_KEG) {
+            AMMO(ITEM_POWDER_KEG) = 1; // As the Goron's test gives it.
+        }
+        else {
+            SAVE_INFO.inventory.ammo[slot] = 0;
+        }
+    }
+}
+
+// ---- Gilded Sword and Mirror Shield ----
+
+// Only these are shared: the Razor Sword reverts on a Song of Time, and Like Likes eat the Hero's Shield.
+#define EQUIP_GILDED_SWORD (1u << 0)
+#define EQUIP_MIRROR_SHIELD (1u << 1)
+
+static const char* const equipment_names[32] = {
+    "the Gilded Sword",
+    "the Mirror Shield",
+};
+
+static u32 read_equipment(u32 param) {
+    u32 bits = 0;
+    if (GET_CUR_EQUIP_VALUE(EQUIP_TYPE_SWORD) == EQUIP_VALUE_SWORD_GILDED || is_stolen(ITEM_SWORD_GILDED)) {
+        bits |= EQUIP_GILDED_SWORD;
+    }
+    if (GET_CUR_EQUIP_VALUE(EQUIP_TYPE_SHIELD) == EQUIP_VALUE_SHIELD_MIRROR) {
+        bits |= EQUIP_MIRROR_SHIELD;
+    }
+    return bits;
+}
+
+static void apply_equipment(PlayState* play, u32 missing, u32 param) {
+    Player* player = GET_PLAYER(play);
+
+    if (missing & EQUIP_GILDED_SWORD) {
+        // The sword belongs on the human form's B button whatever form we're in now (the game's own
+        // Item_Give would put it on the current form's). Same as the Song of Time code returning a
+        // stolen Gilded Sword.
+        SET_EQUIP_VALUE(EQUIP_TYPE_SWORD, EQUIP_VALUE_SWORD_GILDED);
+        if (CUR_FORM == 0) {
+            CUR_FORM_EQUIP(EQUIP_SLOT_B) = ITEM_SWORD_GILDED;
+            Interface_LoadItemIconImpl(play, EQUIP_SLOT_B);
+        }
+        else {
+            BUTTON_ITEM_EQUIP(0, EQUIP_SLOT_B) = ITEM_SWORD_GILDED;
+        }
+    }
+    if (missing & EQUIP_MIRROR_SHIELD) {
+        SET_EQUIP_VALUE(EQUIP_TYPE_SHIELD, EQUIP_VALUE_SHIELD_MIRROR);
+        if (player != NULL) {
+            Player_SetEquipmentData(play, player); // Shows the new shield on Link.
+        }
+    }
+}
+
 // ---- Category table ----
 
 typedef struct {
@@ -297,6 +420,10 @@ static const SyncCategory categories[] = {
     { KEY_WALLET, 0, 2, read_wallet, apply_wallet, NULL, "a bigger wallet", 0 },
     { KEY_HEART_CAPACITY, 0, 20 * 0x10, read_heart_capacity, apply_heart_capacity, NULL, "a heart container",
       0 },
+    // After the upgrades, so a received bow or bomb bag is filled to the group's capacity.
+    { KEY_ITEMS, SHARED_ITEM_BITS, 0, read_items, apply_items, item_names, "an item", 0 },
+    { KEY_EQUIPMENT, EQUIP_GILDED_SWORD | EQUIP_MIRROR_SHIELD, 0, read_equipment, apply_equipment, equipment_names,
+      NULL, 0 },
 };
 
 // ---- Notices ----

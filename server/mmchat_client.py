@@ -18,6 +18,10 @@ Other keys: 0x1002 quest bits (bit 6 Sonata, 7 Lullaby, 8 Bossa Nova, 9 Elegy, 1
   14 Epona, 15 Soaring, 16 Storms, 18 Notebook; 0-3 boss remains), 0x1003 owl statues, 0x1004 dungeon
   maps/compasses, 0x1007 abilities (1 magic, 2 double magic, 4 double defense), 0x2101 quiver level (1-3),
   0x2102 bomb bag level (1-3), 0x2103 wallet level (1-2), 0x2104 heart capacity (16 per heart, e.g. 0x50 = 5)
+  0x1008 items, one bit per inventory slot (bit 1 Bow, 2 Fire Arrow, 3 Ice Arrow, 4 Light Arrow, 6 Bomb Bag,
+  7 Bombchus, 8 Deku Sticks, 9 Deku Nuts, 12 Powder Keg, 13 Pictograph Box, 14 Lens of Truth, 15 Hookshot,
+  16 Great Fairy's Sword; e.g. the Hookshot is /sync 0x1008 0x8000), 0x1009 equipment (1 Gilded Sword,
+  2 Mirror Shield)
 """
 
 import argparse
@@ -40,6 +44,10 @@ QUEST_NAMES = {0: "Odolwa's Remains", 1: "Goht's Remains", 2: "Gyorg's Remains",
                11: "Saria's Song", 13: "Song of Healing", 14: "Epona's Song", 15: "Song of Soaring",
                16: "Song of Storms", 17: "Sun's Song", 18: "Bombers' Notebook", 24: "Lullaby Intro"}
 ABILITY_NAMES = {0: "magic", 1: "double magic", 2: "double defense"}
+ITEM_NAMES = {1: "Bow", 2: "Fire Arrow", 3: "Ice Arrow", 4: "Light Arrow", 6: "Bomb Bag", 7: "Bombchus",
+              8: "Deku Sticks", 9: "Deku Nuts", 12: "Powder Keg", 13: "Pictograph Box", 14: "Lens of Truth",
+              15: "Hookshot", 16: "Great Fairy's Sword"}
+EQUIPMENT_NAMES = {0: "Gilded Sword", 1: "Mirror Shield"}
 # Keys from src/coop_sync.c. Bits 12-15 are the merge rule (1 = OR, 2 = MAX).
 KEY_LABELS = {0x1001: "masks", 0x1002: "quest", 0x1003: "owl statues (bits)", 0x1004: "dungeon maps/compasses (bits)",
               0x1005: "regions visited (bits)", 0x1006: "map clouds (bits)", 0x1007: "abilities",
@@ -57,6 +65,10 @@ def describe(key, value):
         return f"quest: {', '.join(n for b, n in QUEST_NAMES.items() if value & (1 << b)) or 'none'}"
     if key == 0x1007:
         return f"abilities: {', '.join(n for b, n in ABILITY_NAMES.items() if value & (1 << b)) or 'none'}"
+    if key == 0x1008:
+        return f"items: {', '.join(n for b, n in ITEM_NAMES.items() if value & (1 << b)) or 'none'}"
+    if key == 0x1009:
+        return f"equipment: {', '.join(n for b, n in EQUIPMENT_NAMES.items() if value & (1 << b)) or 'none'}"
     if key in KEY_LABELS:
         return f"{KEY_LABELS[key]} = {value:#x}"
     return f"key {key:#06x} = {value:#010x}"
