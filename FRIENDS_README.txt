@@ -29,11 +29,14 @@ CHAT
 CO-OP (shared progression)
   In the Mods menu, turn on "Co-op Save" and everyone uses the same
   "Co-op Save Name". File select then shows a separate co-op save (your
-  normal saves are untouched); start a new file there. Masks, songs, boss
-  remains, owl statues, maps, upgrades, heart containers and Great Fairy
-  rewards one player gets are given to everyone in the group. Shared progress
-  starts arriving
-  once you've learned the Song of Time, so the opening plays normally.
+  normal saves are untouched); start a new file there. Items, masks, songs,
+  boss remains, the Gilded Sword and Mirror Shield, upgrades, heart
+  containers, Great Fairy rewards, owl statues and maps one player gets are
+  given to everyone in the group, and chests and rewards one player collects
+  are marked as collected for everyone. Rupees, ammo and what's in your
+  bottles stay your own, and everyone keeps their own clock. Shared progress
+  starts arriving once you've learned the Song of Time, so the opening plays
+  normally.
   Not compatible with the "Ultimate 6 Save Slots" mod (disable it for co-op).
   The host's server keeps the group's progress in server/coop_state/.
 

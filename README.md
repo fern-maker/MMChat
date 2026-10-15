@@ -29,7 +29,7 @@ Each export has the signature `void f(uint8_t* rdram, recomp_context* ctx)`: arg
 
 ## Co-op sync
 
-Spec: `docs/coop-sync-spec.md`. `src/coop.c` switches to the co-op save file; `src/coop_sync.c` compares each shared value with the group's merged value (cached by the native client) every frame, reports local gains and applies missing ones. Keys carry their merge rule in bits 12-15 (1 = OR, 2 = MAX) so the server stays game-agnostic; never renumber keys, since they're stored in the server's `coop_state/<group>.json`. Incoming progression is applied only after the player has learned the Song of Time.
+Spec: `docs/coop-sync-spec.md`. `src/coop.c` switches to the co-op save file; `src/coop_sync.c` compares each shared value with the group's merged value (cached by the native client) every frame, reports local gains and applies missing ones. Keys carry their merge rule in bits 12-15 (1 = OR, 2 = MAX) so the server stays game-agnostic; never renumber keys, since they're stored in the server's `coop_state/<group>.json`. Incoming progression is applied only after the player has learned the Song of Time, and never while paused. The reward-flag and scene-flag rows are generated at startup from the game's own persistent-flag tables (`sPersistentCycleWeekEventRegs`, `sPersistentCycleSceneFlags`).
 
 ## Protocol (v3)
 
